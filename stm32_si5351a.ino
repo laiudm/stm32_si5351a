@@ -1,0 +1,1155 @@
+///////////////////////////////////////////////////////////////////////////////////
+//   G6LBQ Irwell HF Transceiver VFO - Version 1.0
+//   stm32 + si5351a VFO With BFO & Conversion Oscilator
+//   
+//   (Based on 'JAN2KD 2016.10.19 Multi Band DDS VFO Ver3.1')     
+//   Expanded with Multiple SI5351 & I/O Expanders by G6LBQ  
+//
+//   Created by G6LBQ on 15/09/2020 
+//   Last updated on 08/04/2021
+//                                                        
+//   All Changes to code made by G6LBQ are commented      
+///////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////
+//  RGB colours used for the display - Added by G6LBQ
+//
+//  255-0-0     Red
+//  0-0-0       Black
+//  255-255-0   Yellow
+//  255-255-255 White
+//  0-255-0     Green
+//  50-50-50    Dark Grey
+//  100-100-100 Grey
+//  235-0-200   Pink
+//  0-255-255   Turquoise
+//  0-0-255     Blue
+///////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////
+//  Main LowPass Filters For HF Ham Bands - Added by G6LBQ
+//
+//  1) To be added at a later stage
+//  2) To be added at a later stage
+//  3) To be added at a later stage
+//  4) To be added at a later stage
+//  5) To be added at a later stage
+//  6) To be added at a later stage
+//  7) To be added at a later stage
+//  8) To be added at a later stage
+//  
+///////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////
+//  Main Bandpasss Filters For HF Ham Bands - Added by G6LBQ
+//
+//  1) 0.15 MHz to 1.599999 MHz
+//  2) 1.600001 MHz to 1.999999 MHz
+//  3) 2.000001 MHz to 2.999999 MHz
+//  4) 3.000001 MHz to 3.999999 MHz
+//  5) 4.000001 MHz to 5.999999 MHz
+//  6) 6.000001 MHz to 7.999999 MHz
+//  7) 8.000001 MHz to 10.999999 MHz
+//  8) 11.000001 MHz to 14.999999 MHz
+//  9) 15.000001 MHz to 21.999999 MHz
+//  10)22.000001 MHz to 29.999999 MHz
+//
+///////////////////////////////////////////////////////////////////////////////////
+
+//---------- Library include ----------
+
+#include <Wire.h>
+#include "si5351a2.h"                     
+#include <SPI.h>
+#include <EEPROM.h>
+#include "Rotary.h"                     
+#include "src/Ucglib.h"
+#include "Arduino.h"
+
+//----------   Encorder setting  ---------------
+
+#define ENC_A     PB12                    // Rotary encoder A
+#define ENC_B     PB13                    // Rotary encoder B
+
+Rotary r=Rotary(ENC_A,ENC_B);
+
+//----------   TFT setting  ------------------- 
+
+#define   __CS    PB10                    // G6LBQ changed from PB10 to PB3 to free up PB10 for 2nd I2C bus    
+#define   __DC    PB0                     // D/C
+#define   __RST   PB1                     // RESET   
+
+Ucglib_ILI9341_18x240x320_HWSPI ucg(__DC, __CS, __RST);
+
+//----------   CW Tone  ------------------- 
+
+#define   CW_TONE     700                 // 700Hz
+
+//----------   I/O Assign  ------------------- 
+
+#define   MODE_OUT1    PB15               // Data line for controlling modes of operation                  
+#define   MODE_OUT2    PA8                // Data line for controlling modes of operation                  
+#define   MODE_OUT3    PA9                // G6LBQ added extra mode selection output                  
+#define   MODE_OUT4    PA10               // G6LBQ added extra mode selection output
+#define   SW_BAND      PA0                 
+#define   SW_MODE      PC14                 
+#define   SW_STEP      PA1                // G6LBQ changed from PB14 to PA1                 
+#define   SW_RIT       PC15                  
+#define   SW_TX        PC13               // G6LBQ> PTT - connect to Gnd for TX                 
+#define   METER        PA2                // G6LBQ changed from PA1 to PA2    
+
+//----------   eeprom addresses, constants    ---------------
+#define   EEP_BAND     0x00               // EEPROM BAND Address
+#define   EEP_XTAL     0x08               // Xtal Address
+#define   EEP_INIT     0x0e               // Address of eeprom version-id
+#define   EEP_IFSHIFT  0xB0               // Address of the IFSHIFT table (4x longs - 1 each for LSB, USB, CW, AM
+
+#define   EEP_BANDMAX  10                 // (Was 6 band) G6LBQ 
+#define   EEP_VERSION  74                 // Update the version no. when the eeprom format changes
+
+//---------- Variable setting ----------
+
+long      romf[4];                        // EEPROM freq copy buffer
+long      freq    = 7100000;
+long      freqmax = 7200000;
+long      freqmin = 7000000;
+long      freqold = 0;
+long      freqrit = 0;
+
+String    freqt=String(freq);             // Frequency text
+
+long      ifshift = 0;
+long      ifshiftb;
+long      romb[5];                        // EEPROM bfo copy buffer
+long      vfofreq = 0;
+long      vfofreqb;                 
+
+char f100m,f10m,fmega,f100k,f10k,f1k,f100,f10,f1;
+
+int       rit        = 0;
+int       fstep      = 100;
+uint16    steprom    = 1;
+uint16    fmode      = 3;
+uint16    fmodeb     = 3;
+int       fmodeold   = 1;
+int       flagrit    = 0;
+int       fritold    = 0;
+int       flagmode   = 0;
+int       meterval1  = 0;
+int       tmeterval  = 0;
+int       romadd     = 0;
+int       rombadd    = 0;
+int       analogdata = 0;
+uint16    band       = 0;                   // 3.5MHz
+
+uint16    Status;
+uint16    Data;            
+
+//unsigned long eep_xtalfreq;
+unsigned long eep_freq[4];
+int       eep_romadd;
+int       eep_fstep;
+int       eep_fmode;
+unsigned long eep_bfo[6];
+int       eep_rombadd;
+
+int_fast32_t timepassed;                    // int to hold the arduino miilis since startup
+int       flg_frqwt = 0;                    // Frequency data Wite Flag(EEPROM)
+int       flg_bfowt = 0;                    // BFO Wite Flag(EEPROM)
+int       flg_bfochg = 0;                   // BFO Wite Flag(EEPROM)
+int       flg_freqadj = 0;                  // Frequency ADJ Flag
+
+//uint32_t xtalFreq = XTAL_FREQ;
+long      freqb = 0;
+
+
+//------------ 1st IF Frequency 45MHz For Dual Conversion IF -----------
+
+unsigned long firstIF =   45000000L;        // Added by G6LBQ 01/07/2022
+
+
+//------------------  Initialization  Program  -------------------------
+ 
+void setup() {
+  timepassed = millis();
+
+  afio_cfg_debug_ports(AFIO_DEBUG_NONE);          // ST-LINK(PB3,PB4,PA15,PA12,PA11) Can be used
+  
+  pinMode( ENC_A,INPUT_PULLUP);                   // PC13 pull up
+  pinMode( ENC_B,INPUT_PULLUP);                   // PC14
+
+  attachInterrupt( ENC_A, Rotaly_enc, CHANGE);    // Encorder A
+  attachInterrupt( ENC_B, Rotaly_enc, CHANGE);    //          B
+
+  delay(100);
+  ucg.begin(UCG_FONT_MODE_TRANSPARENT);
+  ucg.clearScreen();
+  ucg.setRotate270();
+
+  pinMode(SW_BAND,INPUT_PULLUP);                
+  pinMode(SW_MODE,INPUT_PULLUP);
+  pinMode(SW_STEP,INPUT_PULLUP);
+  pinMode(SW_RIT,INPUT_PULLUP);
+  pinMode(SW_TX,INPUT_PULLUP);
+  pinMode(ENC_A,INPUT_PULLUP);                   // pull up for encoede A pin
+  pinMode(ENC_B,INPUT_PULLUP);                   // pull up for encoder B pin
+  pinMode(SW_TX,INPUT_PULLUP);
+  pinMode(MODE_OUT1,OUTPUT);                     // LSB Mode 
+  pinMode(MODE_OUT2,OUTPUT);                     // USB Mode
+  pinMode(MODE_OUT3,OUTPUT);                     // CW Mode - G6LBQ added additional mode selection
+  pinMode(MODE_OUT4,OUTPUT);                     // AM Mode - G6LBQ added additional mode selection
+  
+
+//Added by G6LBQ to initialize PCF8574 I/O expander 1 for BPF filters 1 to 5 
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write((0b00000000));
+  Wire.endTransmission();
+
+//Added by G6LBQ to initialize PCF8574 I/O expander 2 for BPF filters 6 to 10
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write((0b00000000));
+  Wire.endTransmission();
+
+  Fnc_eepINIT();
+  delay(100);
+  band2eep();
+  delay(100);
+
+  xtalFreq = Fnc_eepRD(EEP_XTAL);
+  Status = EEPROM.read(EEP_BAND,&band);          // EEPROM read(frequency)
+  romadd=0x010+(band*0x10);
+  for (int i=0; i<3;i++){
+   romf[i]=Fnc_eepRD((romadd+4*i));
+  }
+  freq = romf[0];
+  freqmin = romf[1];
+  freqmax = romf[2];
+  Status = EEPROM.read(romadd+12,&fmode);
+  Status = EEPROM.read(romadd+14,&steprom);
+
+  eep_rombadd=EEP_IFSHIFT;                             // EEPROM read(BFO)
+  for (int i=0; i<4;i++){
+    romb[i]=Fnc_eepRD((eep_rombadd+(4*i)));
+    eep_bfo[i] = romb[i];    
+  }
+
+  if (steprom==1){fstep=1;}                      // STEP set 1Hz
+  if (steprom==2){fstep=10;}                     // STEP set 10Hz 
+  if (steprom==3){fstep=100;}                    // STEP set 100Hz 
+  if (steprom==4){fstep=1000;}                   // Added by G6LBQ FOR 1kHz step
+  if (steprom==5){fstep=10000;}                  // Added by G6LBQ FOR 10kHz step
+  if (steprom==6){fstep=100000;}                 // Added by G6LBQ FOR 100kHz step
+  if (steprom==7){fstep=1000000;}                // Added by G6LBQ FOR 1MHz step
+  banddataout();
+  screen01();
+  chlcd();
+
+  modeset();
+  steplcd();
+  freqt=String(freq);
+  freqlcd();
+}
+
+//----------  Main program  ------------------------------------
+ 
+void loop() {
+
+//------- IF 2nd Conversion Oscillator on CLK1 output ----------
+//
+// fmode 0 =LSB
+// fmode 1 =USB
+// fmode 2 =CW
+// fmode 3 =AM
+  
+  if (fmode == 0) {si5351aSetFrequency(2, 1,  56059000);         // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  }
+  else if (fmode == 1) {si5351aSetFrequency(2, 1,  33941000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
+  }
+  else if (fmode == 2) {si5351aSetFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  }
+  else if (fmode == 3) {si5351aSetFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  }
+  else {
+  }
+
+
+//Start of the HF Band Pass Filter logic for filters 1 to 5 added by G6LBQ
+  
+  if (freq >=150000 && freq<=1599999){
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write(0b00000001);
+  Wire.endTransmission(); 
+  }
+  else if(freq >=1600001 && freq<=1999999){
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write(0b00000010);
+  Wire.endTransmission();  
+  }
+  else if(freq >=2000001 && freq<=2999999){
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write(0b00000100);
+  Wire.endTransmission(); 
+  }
+  else if(freq >=3000001 && freq<=3999999){
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write(0b00001000);
+  Wire.endTransmission(); 
+  }
+  else if(freq >=4000001 && freq<=5999999){
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write(0b00010000);
+  Wire.endTransmission(); 
+  }
+  else {
+  Wire.begin();
+  Wire.beginTransmission(0x38);
+  Wire.write(0b00000000);
+  Wire.endTransmission();
+  }
+
+//End of the HF Band Pass Filter logic for filters 1 to 5 added by G6LBQ
+
+//Start of the HF Band Pass Filter logic for filters 6 to 10 added by G6LBQ
+
+  if (freq >=6000001 && freq<=7999999){
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write(0b00000001);
+  Wire.endTransmission(); 
+  }
+  else if(freq >=8000001 && freq<=10999999){
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write(0b00000010);
+  Wire.endTransmission();  
+  }
+  else if(freq >=11000001 && freq<=14999999){
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write(0b00000100);
+  Wire.endTransmission(); 
+  }
+  else if(freq >=15000001 && freq<=21999999){
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write(0b00001000);
+  Wire.endTransmission(); 
+  }
+  else if(freq >=22000001 && freq<=29999999){
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write(0b00010000);
+  Wire.endTransmission(); 
+  }
+  else {
+  Wire.begin();
+  Wire.beginTransmission(0x39);
+  Wire.write(0b00000000);
+  Wire.endTransmission();
+  }
+
+//End of the HF Band Pass Filter logic for filters 6 to 10 added by G6LBQ
+
+  
+  if(digitalRead(SW_STEP) == LOW)               // STEP sw check
+    setstep();
+  else if((digitalRead(SW_MODE) == LOW) && (flg_freqadj == 0))  // MODE sw check
+    modesw();
+  else if((digitalRead(SW_RIT) == LOW) && (flg_bfochg == 0))    // RIT sw check
+    setrit();
+  else if((digitalRead(SW_BAND) == LOW) && (flg_bfochg == 0) && (flg_freqadj == 0)) // BAND sw check
+    bandcall();
+
+  if (digitalRead(SW_TX)==LOW)                  // TX sw check
+    txset();
+
+  if (flagrit==1){
+    if (freqrit == fritold){
+      meter();
+    }    
+    if (freqrit!=fritold){
+      PLL_write();
+      ritlcd();
+      fritold=freqrit;  
+    }
+  }
+
+  else{
+    if(flg_freqadj == 0){
+      if (freq == freqold){
+        meter();
+      }
+      PLL_write();
+      freqt=String(freq); 
+      freqlcd();
+      freqold=freq;
+    }
+
+    else{
+      if(freq != freqb){
+        xtalFreq = freq;
+        si5351aSetFrequency(0, 0, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
+        freqt=String(freq); 
+        freqlcd();
+        freqb = freq;
+      }
+    }
+  }
+
+  if((flg_frqwt == 1) && (flg_bfochg == 0)){           // EEPROM auto save 2sec   
+    if(timepassed+1000 < millis()){
+      bandwrite();
+      flg_frqwt = 0;
+    } 
+  }
+}
+
+//----------  EEPROM Data initialization  ---------------        
+
+void band2eep(){
+  Status = EEPROM.read(EEP_INIT,&Data);
+  if(Data != EEP_VERSION){                       // Iinitialization check
+    Status = EEPROM.write(EEP_BAND,1);
+
+    xtalFreq = XTAL_FREQ;
+    Fnc_eepWT(xtalFreq,EEP_XTAL);
+    
+    eep_romadd=0x010;                   // BAND:1
+    eep_freq[0]=1800000;
+    eep_freq[1]=1800000;
+    eep_freq[2]=2000000;
+    eep_fmode=0;
+    eep_fstep=3;
+    band2write();
+  
+    eep_romadd=0x020;                   // BAND:2
+    eep_freq[0]=3500000;
+    eep_freq[1]=3500000;
+    eep_freq[2]=3800000;
+    eep_fmode=0;
+    eep_fstep=3;
+    band2write();
+
+    eep_romadd=0x030;                   // BAND:3
+    eep_freq[0]=7000000;
+    eep_freq[1]=7000000;
+    eep_freq[2]=7200000;
+    eep_fmode=0;
+    eep_fstep=3;
+    band2write();
+
+    eep_romadd=0x040;                   // BAND:4
+    eep_freq[0]=14000000;
+    eep_freq[1]=14000000;
+    eep_freq[2]=14350000;
+    eep_fmode=1;
+    eep_fstep=3;
+    band2write();
+
+    eep_romadd=0x050;                   // BAND:5
+    eep_freq[0]=18000000;
+    eep_freq[1]=18000000;
+    eep_freq[2]=18200000;
+    eep_fmode=1;
+    eep_fstep=3;
+    band2write();
+  
+    eep_romadd=0x060;                   // BAND:6
+    eep_freq[0]=21000000;
+    eep_freq[1]=21000000;
+    eep_freq[2]=24990000;
+    eep_fmode=1;
+    eep_fstep=3;
+    band2write();
+
+    eep_romadd=0x070;                   // BAND:7
+    eep_freq[0]=28000000;
+    eep_freq[1]=28000000;
+    eep_freq[2]=29700000;
+    eep_fmode=1;
+    eep_fstep=3;
+    band2write();
+
+    eep_romadd=0x080;                   // BAND:8
+    eep_freq[0]=500000;
+    eep_freq[1]=500000;
+    eep_freq[2]=30000000;
+    eep_fmode=3;
+    eep_fstep=3;
+    band2write();
+	
+	// Andy - repeat this pattern for your 2x additional filters
+    eep_romadd=0x090;                   // BAND:9
+    eep_freq[0]=500000;
+    eep_freq[1]=500000;
+    eep_freq[2]=30000000;
+    eep_fmode=3;
+    eep_fstep=3;
+    band2write();
+	
+	eep_romadd=0x0A0;                   // BAND:10
+    eep_freq[0]=500000;
+    eep_freq[1]=500000;
+    eep_freq[2]=30000000;
+    eep_fmode=3;
+    eep_fstep=3;
+    band2write();
+    
+    eep_rombadd=EEP_IFSHIFT;             // BFO ROMadd:0x090
+    eep_bfo[0]=11056570;                 // LSB BFO Frequency
+    eep_bfo[1]=11059840;                 // USB BFO Frequency
+    eep_bfo[2]=11058400;                 // CW  BFO Frequency
+//  eep_bfo[3]=11058200;                 // AM Not needed for testing only
+    
+    for (int i=0;i<4;i++){
+      Fnc_eepWT(eep_bfo[i],(eep_rombadd+4*i));
+    }
+
+    Status = EEPROM.write(EEP_INIT, EEP_VERSION); // Initialized End code
+  }
+}
+
+//----------  Function Band Write to EEPROM  ---------------        
+
+void band2write(){
+  for (int i=0;i<3;i++){
+    Fnc_eepWT(eep_freq[i],(eep_romadd+4*i));
+  }
+  Status = EEPROM.write(eep_romadd+12,eep_fmode);
+  Status = EEPROM.write(eep_romadd+14,eep_fstep);
+}
+
+//---------- PLL write ---------------------------
+//
+// Original code was for single conversion IF at 11.059MHz so 11.059MHz + VFO Frequency
+// 01/07/2022 Changes are for dual conversion so 45MHz firstIF + VFO Frequency 
+
+void PLL_write(){
+  if(flg_bfochg == 0){
+    if (flagrit==0)
+      vfofreq=freq+firstIF;               // G6LBQ 01/07/2022 changed from vfofreq=freq+ifshift; to vfofreq=freq+firstIF;
+    else
+      vfofreq=freq+firstIF+freqrit;       // G6LBQ 01/07/2022 changed from vfofreq=freq+ifshift+freqrit; to vfofreq=freq+firstIF+freqrit;
+
+    Vfo_out(vfofreq);                     // VFO output
+    Bfo_out(ifshift);                     // BFO
+  }
+  else{
+    ifshift = freq;
+    Bfo_out(ifshift);                     // BFO
+    freq = ifshift;
+  }
+}
+
+//----------  VFO out  --------------- 
+
+void Vfo_out(long frequency){
+  if(vfofreq != vfofreqb){
+    si5351aSetFrequency(0, 0, frequency);         // 01/07/2022 Updated to allow VFO to work with new si5351 Library
+    flg_frqwt = 1;                                // EEP Wite Flag
+    timepassed = millis();
+    vfofreqb = vfofreq;  
+  }
+}
+
+//----------  BFO out  ---------------        
+
+void Bfo_out(long frequency){
+  if(ifshift != ifshiftb){
+    si5351aSetFrequency(1, 2, frequency);         // 01/07/2022 Updated to allow BFO to work with new si5351 Library
+    flg_bfowt = 1;                                // EEP Wite Flag
+    ifshiftb = ifshift;  
+  }
+}
+
+//---------- meter --------------------------
+
+void meter(){
+ meterval1=analogRead(METER);
+// meterval1=meterval1/50;                   // old 
+ meterval1=meterval1/200;                  
+ if (meterval1>15){meterval1=15;}
+  int sx1=sx1+(meterval1*17);
+  sx1=sx1+41;
+  int sx2=0;
+  sx2=sx2+(40+((15-meterval1)*17));
+  ucg.setFont(ucg_font_fub35_tr);
+  ucg.setColor(0,0,0);
+  ucg.drawBox(sx1,180,sx2,16);
+  ucg.setPrintPos(40,200);
+  for(int i=1;i<=meterval1;i++){
+    if (i<=9){
+      ucg.setColor(0,255,255);
+      ucg.print("-");  
+    }
+    else{
+      ucg.setColor(255,0,0);
+      ucg.print("-");
+    }
+  }
+}
+
+//---------- Encoder Interrupt -----------------------
+
+void Rotaly_enc(){
+  if (flagrit==1){
+    unsigned char result = r.process();
+    if(result) {
+      if(result == DIR_CW){  
+        freqrit=freqrit+fstep;
+        if (freqrit>=10000){
+          freqrit=10000;
+        }
+     }
+     else{
+      freqrit=freqrit-fstep;
+      if (freqrit<=-10000){
+        freqrit=-10000;
+      }
+    }
+   }
+  }
+
+  else{
+    unsigned char result = r.process();
+    if(result) {
+      if(result == DIR_CW){  
+        freq=freq+fstep;
+        if((flg_bfochg == 0) && (flg_freqadj == 0) && (freq>=freqmax)){freq=freqmax;}
+      }
+      else{
+        freq=freq-fstep;
+        if((flg_bfochg == 0) && (flg_freqadj == 0) && (freq<=freqmin)){freq=freqmin;}
+      }  
+    }
+  }
+}
+
+//------------ On Air -----------------------------
+
+void txset(){
+  if(fmode == 2)                              // CW?
+    Vfo_out(vfofreq + CW_TONE);               // Vfofreq+700Hz
+  else
+    Vfo_out(vfofreq);                         // vfo out
+    
+
+  ucg.setPrintPos(110,140);
+  ucg.setFont(ucg_font_fub17_tr);
+  ucg.setColor(255,0,0);
+  ucg.print("ON AIR");
+  while(digitalRead(SW_TX) == LOW){
+    meter();
+  }
+
+  ucg.setFont(ucg_font_fub17_tr);
+  ucg.setColor(0,0,0);
+  ucg.drawBox(100,120,250,30);  //45
+}
+
+//------------- Mode set(LSB-USB-CW-AM) ------------
+
+void modeset(){
+    ucg.setFont(ucg_font_fub17_tr);
+    ucg.setPrintPos(82,82);
+    ucg.setColor(0,0,0);
+    ucg.print("USB");
+    ucg.setPrintPos(12,82);
+    ucg.print("LSB"); 
+    ucg.setPrintPos(82,112);
+    ucg.print("A M");
+    ucg.setPrintPos(12,112);
+    ucg.print("C W");    
+
+  switch(fmode){
+    case 0:                                       // LSB
+      ifshift = eep_bfo[0];
+      ucg.setPrintPos(12,82);
+      ucg.setColor(255,255,0);
+      ucg.print("LSB");
+      digitalWrite(MODE_OUT1,HIGH);               
+      digitalWrite(MODE_OUT2,LOW);                
+      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
+      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
+      break;
+    case 1:                                       // USB                                       
+      ifshift = eep_bfo[1];
+      ucg.setColor(255,255,0);
+      ucg.setPrintPos(82,82);
+      ucg.print("USB");
+      digitalWrite(MODE_OUT1,LOW);
+      digitalWrite(MODE_OUT2,HIGH);
+      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
+      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20    
+      break;
+    case 2:                                       // CW
+      ifshift = eep_bfo[2];
+      ucg.setPrintPos(12,112);
+      ucg.setColor(255,255,0);
+      ucg.print("C W");
+      digitalWrite(MODE_OUT1,LOW);
+      digitalWrite(MODE_OUT2,LOW);
+      digitalWrite(MODE_OUT3,HIGH);               // G6LBQ added 1/11/20
+      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
+      break;
+    case 3:                                       // AM
+      ifshift = eep_bfo[3];
+      ucg.setPrintPos(82,112);
+      ucg.setColor(255,255,0); 
+      ucg.print("A M");
+      digitalWrite(MODE_OUT1,LOW);
+      digitalWrite(MODE_OUT2,LOW);
+      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
+      digitalWrite(MODE_OUT4,HIGH);               // G6LBQ added 1/11/20
+      break;
+    default:
+      ifshift = eep_bfo[0];
+      ucg.setPrintPos(12,82);
+      ucg.setColor(255,255,0);
+      ucg.print("LSB");
+      digitalWrite(MODE_OUT1,HIGH);
+      digitalWrite(MODE_OUT2,LOW);
+      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
+      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
+      fmode = 0;
+      break;
+    }
+}
+
+//------------- Mode set SW ------------
+
+void modesw(){
+int cnt = 0;
+
+  if(flg_bfochg == 0){
+    while(digitalRead(SW_MODE) == LOW){
+      delay(100);
+      cnt++;
+      if(10 <= cnt){                              // BFO data change mode(1sec)
+        romadd=0x010+(band*0x10);
+        romf[0]=Fnc_eepRD(romadd);
+        freq = Fnc_eepRD(0x090+(fmode * 4));
+        freqt=String(freq);
+        freqlcd();  
+        ucg.setPrintPos(110,140);
+        ucg.setFont(ucg_font_fub17_tr);
+        ucg.setColor(255,255,0);
+        ucg.print("BFO ADJ");
+        fmodeb = fmode;
+        flg_bfochg = 1;
+        break;
+      }
+    }
+  }
+  else{
+    while(digitalRead(SW_MODE) == LOW){
+      delay(100);
+      cnt++;
+      if(10 <= cnt){                              // BFO data update(1sec)
+        ifshift = freq;
+        Fnc_eepWT(ifshift,0x090+(fmode * 4));     // data write
+        eep_bfo[fmode] = ifshift;
+        freq = romf[0];
+        freqt=String(freq);
+        freqlcd();  
+        ucg.setFont(ucg_font_fub17_tr);
+        ucg.setColor(0,0,0);
+        ucg.drawBox(100,120,250,30);  //45
+        flg_bfochg = 0;
+        fmode--;
+        break;
+        }
+      }
+    }
+  if(flg_bfochg == 0)
+    fmode++;
+  modeset();
+  PLL_write();
+  while(digitalRead(SW_MODE) == LOW);
+}
+
+//------------ Rit SET ------------------------------
+
+void setrit(){
+int cnt = 0;
+
+  if(flg_freqadj == 0){
+    while(digitalRead(SW_RIT) == LOW){
+      delay(100);
+      cnt++;
+      if(10 <= cnt){                              // BFO data change mode(1sec)
+        romadd=0x010+(band*0x10);
+        romf[0]=Fnc_eepRD(romadd);
+        freq = xtalFreq;
+        si5351aSetFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
+        freqt=String(freq);
+        freqlcd();  
+        ucg.setPrintPos(110,140);
+        ucg.setFont(ucg_font_fub17_tr);
+        ucg.setColor(255,255,0);
+        ucg.print("FREQ ADJ");
+        flg_freqadj = 1;
+        flagrit=0;
+        vfofreqb = 0;
+        break;
+      }
+    }
+  }
+
+  else{
+    while(digitalRead(SW_RIT) == LOW){
+      delay(100);
+      cnt++;
+      if(10 <= cnt){                              // BFO data update(1sec)
+        xtalFreq = freq;
+        Fnc_eepWT(xtalFreq,EEP_XTAL);             // data write
+        freq = romf[0];
+        freqt=String(freq);
+        freqlcd();  
+        ucg.setFont(ucg_font_fub17_tr);
+        ucg.setColor(0,0,0);
+        ucg.drawBox(100,120,250,30);              //45
+        flg_freqadj = 0;
+        flagrit=1;
+        break;
+      }
+    }
+  }
+  
+  if((flg_freqadj == 0) && (flagrit == 0)){
+    flagrit=1;
+    ucg.setFont(ucg_font_fub11_tr);
+    ucg.setPrintPos(190,110);
+    ucg.setColor(255,0,0);
+    ucg.print("RIT");
+    ritlcd();
+  }
+
+  else{
+    if((flg_freqadj == 0) && (flagrit == 1)){
+      flagrit=0;
+      vfofreq=freq+ifshift;
+
+      Vfo_out(vfofreq);                       // VFO Out
+
+      freqt=String(freq); 
+      ucg.setFont(ucg_font_fub11_tr);
+      ucg.setPrintPos(190,110);
+      ucg.setColor(255,255,255);
+      ucg.print("RIT");
+      ucg.setColor(0,0,0);  
+      ucg.drawRBox(222,92,91,21,3);
+      freqrit=0;
+    }
+  }
+  while(digitalRead(SW_RIT) == LOW);
+}
+
+//----------- Rit screen ----------------------
+
+void ritlcd(){
+  ucg.setColor(0,0,0);  
+  ucg.drawBox(222,92,91,21);
+  ucg.setFont(ucg_font_fub17_tr);
+  ucg.setColor(255,255,255); 
+  ucg.setPrintPos(230,110);
+  ucg.print(freqrit);
+}
+
+//-------------- encorder frequency step set -----------
+
+void setstep(){
+  if (fstep==1000000){                        // G6LBQ Added additional leading zero's for extra freq steps
+    fstep=1;
+  }
+  else{
+    fstep=fstep * 10;
+  } 
+ steplcd(); 
+ while(digitalRead(SW_STEP) == LOW);
+}
+
+//------------- Step Screen ---------------------------
+
+void steplcd(){
+  ucg.setColor(0,0,0);
+  ucg.drawRBox(221,61,93,23,3);
+  ucg.setFont(ucg_font_fub17_tr);
+  ucg.setColor(255,255,255);
+  ucg.setPrintPos(220,80);
+  if (fstep==1){ucg.print("     1Hz");}
+  if (fstep==10){ucg.print("    10Hz");}
+  if (fstep==100){ucg.print("   100Hz");}
+  if (fstep==1000){ucg.print("    1KHz");}      // Added by G6LBQ FOR 1kHz step
+  if (fstep==10000){ucg.print("   10KHz");}     // Added by G6LBQ FOR 10kHz step
+  if (fstep==100000){ucg.print(" 100KHz");}     // Added by G6LBQ FOR 100kHz step
+  if (fstep==1000000){ucg.print("    1MHz");}   // Added by G6LBQ FOR 1MHz step
+}
+
+//----------- Main frequency screen -------------------
+
+void freqlcd(){
+  ucg.setFont(ucg_font_fub35_tn); 
+  int mojisuu=(freqt.length());
+  if(freq<100){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(217,9,28,36);     
+  }
+  if(f10 !=(freqt.charAt(mojisuu-2))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(245,9,28,36);
+    ucg.setPrintPos(245,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-2)); 
+    f10 = (freqt.charAt(mojisuu-2));
+  }
+  if(freq<10){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(245,9,28,36);    
+     }
+  if(f1 !=(freqt.charAt(mojisuu-1))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(273,9,28,36);
+    ucg.setPrintPos(273,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-1));     
+    f1  = (freqt.charAt(mojisuu-1));   
+  }
+  if(freq<1000){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(202,9,15,36);        
+    }
+  if(f100 !=(freqt.charAt(mojisuu-3))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(217,9,28,36);
+    ucg.setPrintPos(217,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-3)); 
+    f100 = (freqt.charAt(mojisuu-3));
+  }
+  if(freq>=1000){
+    ucg.setPrintPos(202,45);
+    ucg.setColor(0,255,0);
+    ucg.print(".");
+  }
+  if(freq<10000){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(146,9,28,36);     
+    }
+  if(f1k !=(freqt.charAt(mojisuu-4))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(174,9,28,36);
+    ucg.setPrintPos(174,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-4));       
+    f1k  = (freqt.charAt(mojisuu-4));
+  }
+  if(freq<100000){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(118,9,28,36); 
+  }
+  if(f10k !=(freqt.charAt(mojisuu-5))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(146,9,28,36);
+    ucg.setPrintPos(146,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-5));   
+    f10k = (freqt.charAt(mojisuu-5));
+  }
+   if(freq<1000000){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(103,9,15,36); 
+    }
+  if(f100k !=(freqt.charAt(mojisuu-6))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(118,9,28,36);
+    ucg.setPrintPos(118,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-6));   
+    f100k = (freqt.charAt(mojisuu-6));
+  }
+       
+   if(freq>=1000000){
+    ucg.setPrintPos(103,45);
+    ucg.setColor(0,255,0);
+    ucg.print(".");
+  }
+   if(freq<10000000){
+     ucg.setColor(0,0,0);
+    ucg.drawBox(47,9,28,36);
+     }
+   if(fmega !=(freqt.charAt(mojisuu-7))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(75,9,28,36);
+    ucg .setPrintPos(75,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-7));   
+    fmega  = (freqt.charAt(mojisuu-7));
+   }
+   if(freq<100000000){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(19,9,28,36);
+       }
+   if (f10m !=(freqt.charAt(mojisuu-8))){
+    ucg.setColor(0,0,0);
+    ucg.drawBox(47,9,28,36);
+    ucg .setPrintPos(47,45);
+    ucg.setColor(0,255,0);
+    ucg.print(freqt.charAt(mojisuu-8));
+    f10m = (freqt.charAt(mojisuu-8));
+   }
+}
+//----------- Basic Screen -------------------------
+
+void screen01(){
+  ucg.setColor(255,255,255);
+  ucg.drawRFrame(1,1,314,55,5);
+  ucg.drawRFrame(2,2,312,53,5);
+  ucg.setColor(0,0,255);      //G6LBQ changed Grey To Blue
+  ucg.drawRBox(5,60,60,25,3);
+  ucg.drawRBox(75,60,60,25,3);
+  ucg.drawRBox(5,90,60,25,3);
+  ucg.drawRBox(75,90,60,25,3);
+  ucg.setFont(ucg_font_fub17_tr);
+  ucg.setPrintPos(12,82);
+  ucg.setColor(0,0,0);
+  ucg.print("LSB");
+  ucg.setPrintPos(82,82);
+  ucg.print("USB");
+  ucg.setPrintPos(12,112);
+  ucg.print("C W");
+  ucg.setPrintPos(82,112);
+  ucg.print("A M"); 
+  ucg.setColor(255,255,255);
+  ucg.drawRFrame(220,60,95,25,3);
+  ucg.drawRFrame(220,90,95,25,3);
+  ucg.setFont(ucg_font_fub11_tr);
+  ucg.setColor(255,255,255);
+  ucg.setPrintPos(175,80);
+  ucg.print("STEP");
+  ucg.setPrintPos(190,110);
+  ucg.setColor(255,255,255);
+  ucg.print("RIT");
+  ucg.setColor(170,170,170);      //G6LBQ changed from 100,100,100
+  ucg.setPrintPos(10,210);
+  ucg.print(" S:  1-----3-------6-------9---Over--------");
+  ucg.setPrintPos(10,177);
+  ucg.print(" P:  1-----3-----5-----------10--------------");  
+  ucg.setPrintPos(10,230);
+  ucg.setColor(235,0,200);
+  ucg.print( "        G6LBQ Irwell HF Transceiver      "); 
+  ucg.setFont(ucg_font_fub35_tr);
+    ucg.setColor(0,255,0);
+    ucg.setPrintPos(273,45);
+    ucg.print("0");    
+}
+
+//---------- Band data call from eeprom ----------
+
+void bandcall(){
+  band=band+1;
+  if (band>(EEP_BANDMAX-1)){band=0;}
+  romadd=0x010+(band*0x010);
+ for (int i=0; i<3;i++){
+   romf[i]=Fnc_eepRD((romadd+4*i));
+  }
+  freq = romf[0];
+  freqmin = romf[1];
+  freqmax = romf[2];
+  Status = EEPROM.read(romadd+12,&fmode);
+  Status = EEPROM.read(romadd+14,&steprom);
+
+  if (steprom==1){fstep=1;}
+  if (steprom==2){fstep=10;}
+  if (steprom==3){fstep=100;}
+  if (steprom==4){fstep=1000;}      // Added by G6LBQ FOR 1kHz step
+  if (steprom==5){fstep=10000;}     // Added by G6LBQ FOR 10kHz step
+  if (steprom==6){fstep=100000;}    // Added by G6LBQ FOR 100kHz step
+  if (steprom==7){fstep=1000000;}   // Added by G6LBQ FOR 1MHz step
+
+  modeset();
+  steplcd();
+  freqt=String(freq);
+  freqlcd();  
+  banddataout();
+  chlcd();
+ while(digitalRead(SW_BAND) == LOW);
+}
+
+//---------- Band data write to eeprom ----------
+
+void bandwrite(){
+  romadd=0x010+(band*0x010);
+    Fnc_eepWT(freq,romadd);
+  Status = EEPROM.write(EEP_BAND,band);
+  Status = EEPROM.write(romadd+12,fmode);
+  if (fstep==1){steprom=1;}
+  if (fstep==10){steprom=2;}
+  if (fstep==100){steprom=3;}
+  if (fstep==1000){steprom=4;}      // Added by G6LBQ FOR 1kHz step
+  if (fstep==10000){steprom=5;}     // Added by G6LBQ FOR 10kHz step
+  if (fstep==100000){steprom=6;}    // Added by G6LBQ FOR 100kHz step
+  if (fstep==1000000){steprom=7;}   // Added by G6LBQ FOR 1MHz step
+  Status = EEPROM.write(romadd+14,steprom);
+}
+
+//----------  Function EEPROM Initialize  ---------
+
+void Fnc_eepINIT(){
+  uint16 dummy;
+  
+  EEPROM.PageBase0 = 0x801F000;
+  EEPROM.PageBase1 = 0x801F800;
+  EEPROM.PageSize  = 0x400;             // 2kB
+  dummy = EEPROM.init();
+}
+
+//----------  Function EEPROM Read(4byte)  ---------
+
+long Fnc_eepRD(uint16 adr){
+  long val = 0;
+  uint16 dat,dummy;  
+
+  dummy = EEPROM.read(adr,&dat);
+  val = dat << 16;
+  dummy = EEPROM.read(adr+1,&dat);
+  return val | dat;
+}
+
+//----------  Function EEPROM Write(4byte)  ---------
+
+void Fnc_eepWT(long dat,uint16 adr){
+  uint16 dummy,val;
+
+  val = dat & 0xffff;
+  dummy = EEPROM.write(adr+1,val);
+  val = dat >> 16;
+  val = val & 0xffff;
+  dummy = EEPROM.write(adr,val);
+}
+
+//---------- Band data output I/O ----------
+
+void banddataout(){
+
+}
+
+//----------  Band No.(Chanel No.) write to LCD ----------
+
+void chlcd(){
+  ucg.setColor(0,0,0);
+  ucg.drawBox(5,120,80,20);
+  ucg.setFont(ucg_font_fub11_tr);
+  ucg.setPrintPos(12,137);
+  ucg.setColor(255,255,255);
+  ucg.print("Band: ");              //G6LBQ changed wording from CH to Band
+  ucg.print(band+1); 
+}
+  
