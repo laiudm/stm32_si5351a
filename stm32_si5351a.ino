@@ -69,8 +69,9 @@
 #include "Rotary.h"                     
 #include "src/Ucglib.h"
 #include "Arduino.h"
+#include "ButtonEvents.h"
 
-//----------   Encorder setting  ---------------
+//----------   Encoder setting  ---------------
 
 #define ENC_A     PB12                    // Rotary encoder A
 #define ENC_B     PB13                    // Rotary encoder B
@@ -85,9 +86,17 @@ Rotary r=Rotary(ENC_A,ENC_B);
 
 Ucglib_ILI9341_18x240x320_HWSPI ucg(__DC, __CS, __RST);
 
+//----------  Button Setting -----------------
+
+// define event names for the keys
+typedef enum {EVT_NOCHANGE, EVT_STEPUP, EVT_STEPDOWN, EVT_BAND, EVT_RIT, EVT_FREQ_ADJ, EVT_MODE, EVT_BFO_ADJ} keyEvents;
+
+ButtonEvents b = ButtonEvents(EVT_NOCHANGE);
+
 //----------   CW Tone  ------------------- 
 
 #define   CW_TONE     700                 // 700Hz
+
 
 //----------   I/O Assign  ------------------- 
 
@@ -205,14 +214,15 @@ void setup() {
   ucg.clearScreen();
   ucg.setRotate270();
 
-  pinMode(SW_BAND,INPUT_PULLUP);                
-  pinMode(SW_MODE,INPUT_PULLUP);
-  pinMode(SW_STEP,INPUT_PULLUP);
-  pinMode(SW_RIT,INPUT_PULLUP);
+  b.add(SW_BAND, EVT_BAND, EVT_NOCHANGE);
+  b.add(SW_MODE, EVT_MODE, EVT_BFO_ADJ);
+  b.add(SW_STEP, EVT_STEPUP, EVT_STEPDOWN);
+  b.add(SW_RIT, EVT_RIT, EVT_FREQ_ADJ);
+  
   pinMode(SW_TX,INPUT_PULLUP);
-  pinMode(ENC_A,INPUT_PULLUP);                   // pull up for encoede A pin
-  pinMode(ENC_B,INPUT_PULLUP);                   // pull up for encoder B pin
-  pinMode(SW_TX,INPUT_PULLUP);
+  // not needed Rotary does this - pinMode(ENC_A,INPUT_PULLUP);                   // pull up for encoder A pin
+  // not needed Rotary does this - pinMode(ENC_B,INPUT_PULLUP);                   // pull up for encoder B pin
+  // - dup pinMode(SW_TX,INPUT_PULLUP);
   pinMode(MODE_OUT1,OUTPUT);                     // LSB Mode 
   pinMode(MODE_OUT2,OUTPUT);                     // USB Mode
   pinMode(MODE_OUT3,OUTPUT);                     // CW Mode - G6LBQ added additional mode selection
@@ -293,6 +303,7 @@ void loop() {
 
   select_BPF(freq);
 
+/*
   
   if(digitalRead(SW_STEP) == LOW)               // STEP sw check
     setstep();
@@ -302,6 +313,34 @@ void loop() {
     setrit();
   else if((digitalRead(SW_BAND) == LOW) && (flg_bfochg == 0) && (flg_freqadj == 0)) // BAND sw check
     bandcall();
+  */
+  
+  int event = b.process();
+  switch (event) {
+    case EVT_NOCHANGE:
+      break; // nothing to do
+    case EVT_STEPUP:
+      setstep();
+      break;
+    case EVT_STEPDOWN:
+      setstepDown();
+      break;
+    case EVT_BAND:
+      bandcall();
+      break;
+    case EVT_RIT:
+      setrit();
+      break;
+    case EVT_FREQ_ADJ:
+      freqAdjust();
+      break;
+    case EVT_MODE:
+      modesw();
+      break;
+    case EVT_BFO_ADJ:
+      bfoAdjust();
+      break;
+  }
 
   if (digitalRead(SW_TX)==LOW)                  // TX sw check
     txset();
@@ -315,9 +354,7 @@ void loop() {
       ritlcd();
       fritold=freqrit;  
     }
-  }
-
-  else{
+  } else{
     if(flg_freqadj == 0){
       if (freq == freqold){
         meter();
@@ -326,9 +363,7 @@ void loop() {
       freqt=String(freq); 
       freqlcd();
       freqold=freq;
-    }
-
-    else{
+  } else{
       if(freq != freqb){
         xtalFreq = freq;
         setFrequency(0, 0, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
@@ -739,6 +774,7 @@ void modeset(){
       digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
       digitalWrite(MODE_OUT4,HIGH);               // G6LBQ added 1/11/20
       break;
+      /*
     default:
       ifshift = eep_bfo[0];
       ucg.setPrintPos(12,82);
@@ -750,12 +786,13 @@ void modeset(){
       digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
       fmode = 0;
       break;
+      */
     }
 }
 
 //------------- Mode set SW ------------
 
-void modesw(){
+void modeswHide(){
 int cnt = 0;
 
   if(flg_bfochg == 0){
@@ -805,9 +842,47 @@ int cnt = 0;
   while(digitalRead(SW_MODE) == LOW);
 }
 
+void modesw() {
+  //fmode++;
+  fmode = (fmode + 1) % 4;  // wrap around
+  modeset();
+  PLL_write();
+}
+
+//------------- BFO Adjust ------------
+
+void bfoAdjust() {
+  if (flg_bfochg) {
+    ifshift = freq;
+    Fnc_eepWT(ifshift,0x090+(fmode * 4));     // data write
+    eep_bfo[fmode] = ifshift;
+    freq = romf[0];
+    freqt=String(freq);
+    freqlcd();  
+    ucg.setFont(ucg_font_fub17_tr);
+    ucg.setColor(0,0,0);
+    ucg.drawBox(100,120,250,30);  //45
+  } else {
+    romadd=0x010+(band*0x10);
+    romf[0]=Fnc_eepRD(romadd);
+    freq = Fnc_eepRD(0x090+(fmode * 4));
+    freqt=String(freq);
+    freqlcd();  
+    ucg.setPrintPos(110,140);
+    ucg.setFont(ucg_font_fub17_tr);
+    ucg.setColor(255,255,0);
+    ucg.print("BFO ADJ");
+    fmodeb = fmode;
+  }
+  flg_bfochg = !flg_bfochg;
+
+  modeset();  // needed?
+  PLL_write();
+}
+
 //------------ Rit SET ------------------------------
 
-void setrit(){
+void setritHide(){
 int cnt = 0;
 
   if(flg_freqadj == 0){
@@ -882,6 +957,30 @@ int cnt = 0;
   while(digitalRead(SW_RIT) == LOW);
 }
 
+void setrit() {
+  if (flagrit) {
+    vfofreq=freq+ifshift;
+
+    Vfo_out(vfofreq);                       // VFO Out
+
+    freqt=String(freq); 
+    ucg.setFont(ucg_font_fub11_tr);
+    ucg.setPrintPos(190,110);
+    ucg.setColor(255,255,255);
+    ucg.print("RIT");
+    ucg.setColor(0,0,0);  
+    ucg.drawRBox(222,92,91,21,3);
+    freqrit=0;
+  } else {
+    ucg.setFont(ucg_font_fub11_tr);
+    ucg.setPrintPos(190,110);
+    ucg.setColor(255,0,0);
+    ucg.print("RIT");
+    ritlcd();    
+  }
+  flagrit = !flagrit;
+}
+
 //----------- Rit screen ----------------------
 
 void ritlcd(){
@@ -893,7 +992,36 @@ void ritlcd(){
   ucg.print(freqrit);
 }
 
-//-------------- encorder frequency step set -----------
+// --- Frequency Adjust -----------
+
+void freqAdjust() {
+  if(flg_freqadj) {
+    xtalFreq = freq;
+    Fnc_eepWT(xtalFreq,EEP_XTAL);             // data write
+    freq = romf[0];
+    freqt=String(freq);
+    freqlcd();  
+    ucg.setFont(ucg_font_fub17_tr);
+    ucg.setColor(0,0,0);
+    ucg.drawBox(100,120,250,30);              //45
+    flg_freqadj = 0;
+  } else {
+    romadd=0x010+(band*0x10);
+    romf[0]=Fnc_eepRD(romadd);
+    freq = xtalFreq;
+    setFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
+    freqt=String(freq);
+    freqlcd();  
+    ucg.setPrintPos(110,140);
+    ucg.setFont(ucg_font_fub17_tr);
+    ucg.setColor(255,255,0);
+    ucg.print("FREQ ADJ");
+    flg_freqadj = 1;
+    vfofreqb = 0;    
+  }
+}
+
+//-------------- encoder frequency step set -----------
 
 void setstep(){
   if (fstep==1000000){                        // G6LBQ Added additional leading zero's for extra freq steps
@@ -903,7 +1031,16 @@ void setstep(){
     fstep=fstep * 10;
   } 
  steplcd(); 
- while(digitalRead(SW_STEP) == LOW);
+ //while(digitalRead(SW_STEP) == LOW);
+}
+
+void setstepDown() {
+  if (fstep==1) {
+    fstep == 1000000;
+  } else {
+    fstep=fstep / 10;
+  }
+  steplcd();
 }
 
 //------------- Step Screen ---------------------------
@@ -1110,7 +1247,7 @@ void bandcall(){
   freqlcd();  
   banddataout();
   chlcd();
- while(digitalRead(SW_BAND) == LOW);
+ //while(digitalRead(SW_BAND) == LOW);
 }
 
 //---------- Band data write to eeprom ----------
