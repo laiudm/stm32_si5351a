@@ -138,8 +138,6 @@ long      freqmin = 7000000;
 long      freqold = 0;
 long      freqrit = 0;
 
-String    freqt=String(freq);             // Frequency text
-
 long      ifshift = 0;
 long      ifshiftb;
 long      romb[5];                        // EEPROM bfo copy buffer
@@ -266,8 +264,7 @@ void setup() {
 
   modeset();
   steplcd();
-  freqt=String(freq);
-  freqlcd();
+  freqlcd(freq);
 }
 
 //----------  Main program  ------------------------------------
@@ -337,15 +334,13 @@ void loop() {
         meter();
       }
       PLL_write();
-      freqt=String(freq); 
-      freqlcd();
+      freqlcd(freq);
       freqold=freq;
   } else{
       if(freq != freqb){
         xtalFreq = freq;
         setFrequency(0, 0, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
-        freqt=String(freq); 
-        freqlcd();
+        freqlcd(freq);
         freqb = freq;
       }
     }
@@ -709,11 +704,11 @@ void setHighLightText(int x, int y, bool highlight, String s) {
 }
 
 void modeset(){
-    ucg.setFont(ucg_font_fub17_tr);
-    setHighLightText(82,  82, fmode==MODE_USB, "USB");
-    setHighLightText(12,  82, fmode==MODE_LSB, "LSB");
-    setHighLightText(82, 112, fmode==MODE_AM, "A M");
-    setHighLightText(12, 112, fmode==MODE_CW, "C W");
+  ucg.setFont(ucg_font_fub17_tr);
+  setHighLightText(82,  82, fmode==MODE_USB, "USB");
+  setHighLightText(12,  82, fmode==MODE_LSB, "LSB");
+  setHighLightText(82, 112, fmode==MODE_AM,  "A M");
+  setHighLightText(12, 112, fmode==MODE_CW,  "C W");
 
   switch(fmode){
     case MODE_LSB:
@@ -727,12 +722,12 @@ void modeset(){
       break;
     case MODE_AM:
       break;
-    }
+  }
 
-    digitalWrite(OUT_LSB, fmode==MODE_LSB);
-    digitalWrite(OUT_USB, fmode==MODE_USB);
-    digitalWrite(OUT_CW,  fmode==MODE_CW);       // G6LBQ added 1/11/20
-    digitalWrite(OUT_AM,  fmode==MODE_AM);       // G6LBQ added 1/11/20
+  digitalWrite(OUT_LSB, fmode==MODE_LSB);
+  digitalWrite(OUT_USB, fmode==MODE_USB);
+  digitalWrite(OUT_CW,  fmode==MODE_CW);       // G6LBQ added 1/11/20
+  digitalWrite(OUT_AM,  fmode==MODE_AM);       // G6LBQ added 1/11/20
 }
 
 //------------- Mode set SW ------------
@@ -751,8 +746,7 @@ void bfoAdjust() {
     Fnc_eepWT(ifshift,0x090+(fmode * 4));     // data write
     eep_bfo[fmode] = ifshift;
     freq = romf[0];
-    freqt=String(freq);
-    freqlcd();  
+    freqlcd(freq);  
     ucg.setFont(ucg_font_fub17_tr);
     ucg.setColor(0,0,0);
     ucg.drawBox(100,120,250,30);  //45
@@ -760,8 +754,7 @@ void bfoAdjust() {
     romadd=0x010+(band*0x10);
     romf[0]=Fnc_eepRD(romadd);
     freq = Fnc_eepRD(0x090+(fmode * 4));
-    freqt=String(freq);
-    freqlcd();  
+    freqlcd(freq);  
     ucg.setPrintPos(110,140);
     ucg.setFont(ucg_font_fub17_tr);
     ucg.setColor(255,255,0);
@@ -782,7 +775,6 @@ void setrit() {
 
     Vfo_out(vfofreq);                       // VFO Out
 
-    freqt=String(freq); 
     ucg.setFont(ucg_font_fub11_tr);
     ucg.setPrintPos(190,110);
     ucg.setColor(255,255,255);
@@ -818,8 +810,7 @@ void freqAdjust() {
     xtalFreq = freq;
     Fnc_eepWT(xtalFreq,EEP_XTAL);             // data write
     freq = romf[0];
-    freqt=String(freq);
-    freqlcd();  
+    freqlcd(freq);  
     ucg.setFont(ucg_font_fub17_tr);
     ucg.setColor(0,0,0);
     ucg.drawBox(100,120,250,30);              //45
@@ -829,8 +820,7 @@ void freqAdjust() {
     romf[0]=Fnc_eepRD(romadd);
     freq = xtalFreq;
     setFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
-    freqt=String(freq);
-    freqlcd();  
+    freqlcd(freq);  
     ucg.setPrintPos(110,140);
     ucg.setFont(ucg_font_fub17_tr);
     ucg.setColor(255,255,0);
@@ -881,7 +871,8 @@ void steplcd(){
 
 //----------- Main frequency screen -------------------
 
-void freqlcd(){
+void freqlcd(long freq){
+  String freqt = String(freq);
   ucg.setFont(ucg_font_fub35_tn); 
   int mojisuu=(freqt.length());
   if(freq<100){
@@ -1062,8 +1053,7 @@ void bandcall(){
 
   modeset();
   steplcd();
-  freqt=String(freq);
-  freqlcd();  
+  freqlcd(freq);  
   banddataout();
   chlcd();
  //while(digitalRead(SW_BAND) == LOW);
