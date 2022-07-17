@@ -100,10 +100,10 @@ ButtonEvents b = ButtonEvents(EVT_NOCHANGE);
 
 //----------   I/O Assign  ------------------- 
 
-#define   MODE_OUT1    PB15               // Data line for controlling modes of operation                  
-#define   MODE_OUT2    PA8                // Data line for controlling modes of operation                  
-#define   MODE_OUT3    PA9                // G6LBQ added extra mode selection output                  
-#define   MODE_OUT4    PA10               // G6LBQ added extra mode selection output
+#define   OUT_LSB      PB15               // Data line for controlling modes of operation                  
+#define   OUT_USB      PA8                // Data line for controlling modes of operation                  
+#define   OUT_CW       PA9                // G6LBQ added extra mode selection output                  
+#define   OUT_AM       PA10               // G6LBQ added extra mode selection output
 #define   SW_BAND      PA0                 
 #define   SW_MODE      PC14                 
 #define   SW_STEP      PA1                // G6LBQ changed from PB14 to PA1                 
@@ -223,10 +223,10 @@ void setup() {
   b.add(SW_RIT, EVT_RIT, EVT_FREQ_ADJ);
   
   pinMode(SW_TX,INPUT_PULLUP);
-  pinMode(MODE_OUT1,OUTPUT);                     // LSB Mode 
-  pinMode(MODE_OUT2,OUTPUT);                     // USB Mode
-  pinMode(MODE_OUT3,OUTPUT);                     // CW Mode - G6LBQ added additional mode selection
-  pinMode(MODE_OUT4,OUTPUT);                     // AM Mode - G6LBQ added additional mode selection
+  pinMode(OUT_LSB,OUTPUT);                    // LSB Mode 
+  pinMode(OUT_USB,OUTPUT);                    // USB Mode
+  pinMode(OUT_CW,OUTPUT);                     // CW Mode - G6LBQ added additional mode selection
+  pinMode(OUT_AM,OUTPUT);                     // AM Mode - G6LBQ added additional mode selection
   
   init_PCF8574();
 
@@ -560,7 +560,7 @@ void PLL_write(){
 }
 
 // -----     Routines to interface to the Si5351s-----
-long currentFrequency[] = { -1, -1, -1 };
+long currentFrequency[] = { -1, -1, -1 };   // track output frequences for changes
 
 void _setFrequency(uint8_t port, uint8_t channel, uint32_t frequency) {
 #ifndef UNITTEST
@@ -698,60 +698,41 @@ void txset(){
 
 //------------- Mode set(LSB-USB-CW-AM) ------------
 
+void setHighLightText(int x, int y, bool highlight, String s) {
+  ucg.setPrintPos(x, y);
+  if (highlight) {
+    ucg.setColor(255,255,0);
+  } else {
+    ucg.setColor(0,0,0);
+  }
+  ucg.print(s);
+}
+
 void modeset(){
     ucg.setFont(ucg_font_fub17_tr);
-    ucg.setPrintPos(82,82);
-    ucg.setColor(0,0,0);
-    ucg.print("USB");
-    ucg.setPrintPos(12,82);
-    ucg.print("LSB"); 
-    ucg.setPrintPos(82,112);
-    ucg.print("A M");
-    ucg.setPrintPos(12,112);
-    ucg.print("C W");    
+    setHighLightText(82,  82, fmode==MODE_USB, "USB");
+    setHighLightText(12,  82, fmode==MODE_LSB, "LSB");
+    setHighLightText(82, 112, fmode==MODE_AM, "A M");
+    setHighLightText(12, 112, fmode==MODE_CW, "C W");
 
   switch(fmode){
     case MODE_LSB:
       ifshift = eep_bfo[0];
-      ucg.setPrintPos(12,82);
-      ucg.setColor(255,255,0);
-      ucg.print("LSB");
-      digitalWrite(MODE_OUT1,HIGH);               
-      digitalWrite(MODE_OUT2,LOW);                
-      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
-      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
       break;
     case MODE_USB:                                      
       ifshift = eep_bfo[1];
-      ucg.setColor(255,255,0);
-      ucg.setPrintPos(82,82);
-      ucg.print("USB");
-      digitalWrite(MODE_OUT1,LOW);
-      digitalWrite(MODE_OUT2,HIGH);
-      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
-      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20    
       break;
     case MODE_CW:
       ifshift = eep_bfo[2];
-      ucg.setPrintPos(12,112);
-      ucg.setColor(255,255,0);
-      ucg.print("C W");
-      digitalWrite(MODE_OUT1,LOW);
-      digitalWrite(MODE_OUT2,LOW);
-      digitalWrite(MODE_OUT3,HIGH);               // G6LBQ added 1/11/20
-      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
       break;
     case MODE_AM:
-      ifshift = eep_bfo[3];
-      ucg.setPrintPos(82,112);
-      ucg.setColor(255,255,0); 
-      ucg.print("A M");
-      digitalWrite(MODE_OUT1,LOW);
-      digitalWrite(MODE_OUT2,LOW);
-      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
-      digitalWrite(MODE_OUT4,HIGH);               // G6LBQ added 1/11/20
       break;
     }
+
+    digitalWrite(OUT_LSB, fmode==MODE_LSB);
+    digitalWrite(OUT_USB, fmode==MODE_USB);
+    digitalWrite(OUT_CW,  fmode==MODE_CW);       // G6LBQ added 1/11/20
+    digitalWrite(OUT_AM,  fmode==MODE_AM);       // G6LBQ added 1/11/20
 }
 
 //------------- Mode set SW ------------
