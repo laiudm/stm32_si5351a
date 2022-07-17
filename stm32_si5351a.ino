@@ -88,7 +88,7 @@ Ucglib_ILI9341_18x240x320_HWSPI ucg(__DC, __CS, __RST);
 
 //----------  Button Setting -----------------
 
-// define event names for the keys
+// define event names for the key events
 typedef enum {EVT_NOCHANGE, EVT_STEPUP, EVT_STEPDOWN, EVT_BAND, EVT_RIT, EVT_FREQ_ADJ, EVT_MODE, EVT_BFO_ADJ} keyEvents;
 
 ButtonEvents b = ButtonEvents(EVT_NOCHANGE);
@@ -125,6 +125,10 @@ ButtonEvents b = ButtonEvents(EVT_NOCHANGE);
 #define   EEP_BANDMAX  10                 // (Was 6 band) G6LBQ 
 #define   EEP_VERSION  74                 // Update the version no. when the eeprom format changes
 
+//---------- Modes ---------------------
+
+typedef enum {MODE_LSB, MODE_USB, MODE_CW, MODE_AM} modes;
+
 //---------- Variable setting ----------
 
 long      romf[4];                        // EEPROM freq copy buffer
@@ -147,9 +151,8 @@ char f100m,f10m,fmega,f100k,f10k,f1k,f100,f10,f1;
 int       rit        = 0;
 int       fstep      = 100;
 uint16    steprom    = 1;
-uint16    fmode      = 3;
-uint16    fmodeb     = 3;
-int       fmodeold   = 1;
+uint16    fmode      = MODE_AM;
+uint16    fmodeb     = MODE_AM;
 int       flagrit    = 0;
 int       fritold    = 0;
 int       flagmode   = 0;
@@ -206,8 +209,8 @@ void setup() {
   
   pinMode( ENC_A, INPUT_PULLUP);                  // PC13 pull up
   pinMode( ENC_B, INPUT_PULLUP);                  // PC14
-  attachInterrupt( ENC_A, Rotaly_enc, CHANGE);    // Encorder A
-  attachInterrupt( ENC_B, Rotaly_enc, CHANGE);    //          B
+  attachInterrupt( ENC_A, Rotary_enc, CHANGE);    // Encoder A
+  attachInterrupt( ENC_B, Rotary_enc, CHANGE);    //         B
 
   delay(100);
   ucg.begin(UCG_FONT_MODE_TRANSPARENT);
@@ -220,9 +223,6 @@ void setup() {
   b.add(SW_RIT, EVT_RIT, EVT_FREQ_ADJ);
   
   pinMode(SW_TX,INPUT_PULLUP);
-  // not needed Rotary does this - pinMode(ENC_A,INPUT_PULLUP);                   // pull up for encoder A pin
-  // not needed Rotary does this - pinMode(ENC_B,INPUT_PULLUP);                   // pull up for encoder B pin
-  // - dup pinMode(SW_TX,INPUT_PULLUP);
   pinMode(MODE_OUT1,OUTPUT);                     // LSB Mode 
   pinMode(MODE_OUT2,OUTPUT);                     // USB Mode
   pinMode(MODE_OUT3,OUTPUT);                     // CW Mode - G6LBQ added additional mode selection
@@ -284,36 +284,13 @@ void loop() {
 #endif
 
 //------- IF 2nd Conversion Oscillator on CLK1 output ----------
-//
-// fmode 0 =LSB
-// fmode 1 =USB
-// fmode 2 =CW
-// fmode 3 =AM
   
-  if (fmode == 0) {setFrequency(2, 1,  56059000);         // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  }
-  else if (fmode == 1) {setFrequency(2, 1,  33941000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
-  }
-  else if (fmode == 2) {setFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  }
-  else if (fmode == 3) {setFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  }
-  else {
-  }
+  if      (fmode == MODE_LSB) {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  else if (fmode == MODE_USB) {setFrequency(2, 1,  33941000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
+  else if (fmode == MODE_CW)  {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  else if (fmode == MODE_AM)  {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
 
   select_BPF(freq);
-
-/*
-  
-  if(digitalRead(SW_STEP) == LOW)               // STEP sw check
-    setstep();
-  else if((digitalRead(SW_MODE) == LOW) && (flg_freqadj == 0))  // MODE sw check
-    modesw();
-  else if((digitalRead(SW_RIT) == LOW) && (flg_bfochg == 0))    // RIT sw check
-    setrit();
-  else if((digitalRead(SW_BAND) == LOW) && (flg_bfochg == 0) && (flg_freqadj == 0)) // BAND sw check
-    bandcall();
-  */
   
   int event = b.process();
   switch (event) {
@@ -459,7 +436,7 @@ void band2eep(){
     eep_freq[0]=1800000;
     eep_freq[1]=1800000;
     eep_freq[2]=2000000;
-    eep_fmode=0;
+    eep_fmode=MODE_LSB;
     eep_fstep=3;
     band2write();
   
@@ -467,7 +444,7 @@ void band2eep(){
     eep_freq[0]=3500000;
     eep_freq[1]=3500000;
     eep_freq[2]=3800000;
-    eep_fmode=0;
+    eep_fmode=MODE_LSB;
     eep_fstep=3;
     band2write();
 
@@ -475,7 +452,7 @@ void band2eep(){
     eep_freq[0]=7000000;
     eep_freq[1]=7000000;
     eep_freq[2]=7200000;
-    eep_fmode=0;
+    eep_fmode=MODE_LSB;
     eep_fstep=3;
     band2write();
 
@@ -483,7 +460,7 @@ void band2eep(){
     eep_freq[0]=14000000;
     eep_freq[1]=14000000;
     eep_freq[2]=14350000;
-    eep_fmode=1;
+    eep_fmode=MODE_USB;
     eep_fstep=3;
     band2write();
 
@@ -491,7 +468,7 @@ void band2eep(){
     eep_freq[0]=18000000;
     eep_freq[1]=18000000;
     eep_freq[2]=18200000;
-    eep_fmode=1;
+    eep_fmode=MODE_USB;
     eep_fstep=3;
     band2write();
   
@@ -499,7 +476,7 @@ void band2eep(){
     eep_freq[0]=21000000;
     eep_freq[1]=21000000;
     eep_freq[2]=24990000;
-    eep_fmode=1;
+    eep_fmode=MODE_USB;
     eep_fstep=3;
     band2write();
 
@@ -507,7 +484,7 @@ void band2eep(){
     eep_freq[0]=28000000;
     eep_freq[1]=28000000;
     eep_freq[2]=29700000;
-    eep_fmode=1;
+    eep_fmode=MODE_USB;
     eep_fstep=3;
     band2write();
 
@@ -515,7 +492,7 @@ void band2eep(){
     eep_freq[0]=500000;
     eep_freq[1]=500000;
     eep_freq[2]=30000000;
-    eep_fmode=3;
+    eep_fmode=MODE_AM;
     eep_fstep=3;
     band2write();
 	
@@ -524,7 +501,7 @@ void band2eep(){
     eep_freq[0]=500000;
     eep_freq[1]=500000;
     eep_freq[2]=30000000;
-    eep_fmode=3;
+    eep_fmode=MODE_AM;
     eep_fstep=3;
     band2write();
 	
@@ -532,7 +509,7 @@ void band2eep(){
     eep_freq[0]=500000;
     eep_freq[1]=500000;
     eep_freq[2]=30000000;
-    eep_fmode=3;
+    eep_fmode=MODE_AM;
     eep_fstep=3;
     band2write();
     
@@ -652,7 +629,7 @@ void meter(){
 }
 
 //---------- Encoder Interrupt -----------------------
-void Rotaly_encHide(){  // investigate very high interupt rate
+void Rotary_encHide(){  // investigate very high interupt rate
   static long freq = 0;
   interruptCount++;
   unsigned char result = r.process();
@@ -662,7 +639,7 @@ void Rotaly_encHide(){  // investigate very high interupt rate
     freq--;
   }
 }
-void Rotaly_enc(){
+void Rotary_enc(){
   interruptCount++;
   if (flagrit==1){
     unsigned char result = r.process();
@@ -700,7 +677,7 @@ void Rotaly_enc(){
 //------------ On Air -----------------------------
 
 void txset(){
-  if(fmode == 2)                              // CW?
+  if(fmode == MODE_CW)                        // CW?
     Vfo_out(vfofreq + CW_TONE);               // Vfofreq+700Hz
   else
     Vfo_out(vfofreq);                         // vfo out
@@ -734,7 +711,7 @@ void modeset(){
     ucg.print("C W");    
 
   switch(fmode){
-    case 0:                                       // LSB
+    case MODE_LSB:
       ifshift = eep_bfo[0];
       ucg.setPrintPos(12,82);
       ucg.setColor(255,255,0);
@@ -744,7 +721,7 @@ void modeset(){
       digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
       digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
       break;
-    case 1:                                       // USB                                       
+    case MODE_USB:                                      
       ifshift = eep_bfo[1];
       ucg.setColor(255,255,0);
       ucg.setPrintPos(82,82);
@@ -754,7 +731,7 @@ void modeset(){
       digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
       digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20    
       break;
-    case 2:                                       // CW
+    case MODE_CW:
       ifshift = eep_bfo[2];
       ucg.setPrintPos(12,112);
       ucg.setColor(255,255,0);
@@ -764,7 +741,7 @@ void modeset(){
       digitalWrite(MODE_OUT3,HIGH);               // G6LBQ added 1/11/20
       digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
       break;
-    case 3:                                       // AM
+    case MODE_AM:
       ifshift = eep_bfo[3];
       ucg.setPrintPos(82,112);
       ucg.setColor(255,255,0); 
@@ -774,76 +751,12 @@ void modeset(){
       digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
       digitalWrite(MODE_OUT4,HIGH);               // G6LBQ added 1/11/20
       break;
-      /*
-    default:
-      ifshift = eep_bfo[0];
-      ucg.setPrintPos(12,82);
-      ucg.setColor(255,255,0);
-      ucg.print("LSB");
-      digitalWrite(MODE_OUT1,HIGH);
-      digitalWrite(MODE_OUT2,LOW);
-      digitalWrite(MODE_OUT3,LOW);                // G6LBQ added 1/11/20
-      digitalWrite(MODE_OUT4,LOW);                // G6LBQ added 1/11/20
-      fmode = 0;
-      break;
-      */
     }
 }
 
 //------------- Mode set SW ------------
 
-void modeswHide(){
-int cnt = 0;
-
-  if(flg_bfochg == 0){
-    while(digitalRead(SW_MODE) == LOW){
-      delay(100);
-      cnt++;
-      if(10 <= cnt){                              // BFO data change mode(1sec)
-        romadd=0x010+(band*0x10);
-        romf[0]=Fnc_eepRD(romadd);
-        freq = Fnc_eepRD(0x090+(fmode * 4));
-        freqt=String(freq);
-        freqlcd();  
-        ucg.setPrintPos(110,140);
-        ucg.setFont(ucg_font_fub17_tr);
-        ucg.setColor(255,255,0);
-        ucg.print("BFO ADJ");
-        fmodeb = fmode;
-        flg_bfochg = 1;
-        break;
-      }
-    }
-  }
-  else{
-    while(digitalRead(SW_MODE) == LOW){
-      delay(100);
-      cnt++;
-      if(10 <= cnt){                              // BFO data update(1sec)
-        ifshift = freq;
-        Fnc_eepWT(ifshift,0x090+(fmode * 4));     // data write
-        eep_bfo[fmode] = ifshift;
-        freq = romf[0];
-        freqt=String(freq);
-        freqlcd();  
-        ucg.setFont(ucg_font_fub17_tr);
-        ucg.setColor(0,0,0);
-        ucg.drawBox(100,120,250,30);  //45
-        flg_bfochg = 0;
-        fmode--;
-        break;
-        }
-      }
-    }
-  if(flg_bfochg == 0)
-    fmode++;
-  modeset();
-  PLL_write();
-  while(digitalRead(SW_MODE) == LOW);
-}
-
 void modesw() {
-  //fmode++;
   fmode = (fmode + 1) % 4;  // wrap around
   modeset();
   PLL_write();
@@ -881,81 +794,6 @@ void bfoAdjust() {
 }
 
 //------------ Rit SET ------------------------------
-
-void setritHide(){
-int cnt = 0;
-
-  if(flg_freqadj == 0){
-    while(digitalRead(SW_RIT) == LOW){
-      delay(100);
-      cnt++;
-      if(10 <= cnt){                              // BFO data change mode(1sec)
-        romadd=0x010+(band*0x10);
-        romf[0]=Fnc_eepRD(romadd);
-        freq = xtalFreq;
-        setFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
-        freqt=String(freq);
-        freqlcd();  
-        ucg.setPrintPos(110,140);
-        ucg.setFont(ucg_font_fub17_tr);
-        ucg.setColor(255,255,0);
-        ucg.print("FREQ ADJ");
-        flg_freqadj = 1;
-        flagrit=0;
-        vfofreqb = 0;
-        break;
-      }
-    }
-  }
-
-  else{
-    while(digitalRead(SW_RIT) == LOW){
-      delay(100);
-      cnt++;
-      if(10 <= cnt){                              // BFO data update(1sec)
-        xtalFreq = freq;
-        Fnc_eepWT(xtalFreq,EEP_XTAL);             // data write
-        freq = romf[0];
-        freqt=String(freq);
-        freqlcd();  
-        ucg.setFont(ucg_font_fub17_tr);
-        ucg.setColor(0,0,0);
-        ucg.drawBox(100,120,250,30);              //45
-        flg_freqadj = 0;
-        flagrit=1;
-        break;
-      }
-    }
-  }
-  
-  if((flg_freqadj == 0) && (flagrit == 0)){
-    flagrit=1;
-    ucg.setFont(ucg_font_fub11_tr);
-    ucg.setPrintPos(190,110);
-    ucg.setColor(255,0,0);
-    ucg.print("RIT");
-    ritlcd();
-  }
-
-  else{
-    if((flg_freqadj == 0) && (flagrit == 1)){
-      flagrit=0;
-      vfofreq=freq+ifshift;
-
-      Vfo_out(vfofreq);                       // VFO Out
-
-      freqt=String(freq); 
-      ucg.setFont(ucg_font_fub11_tr);
-      ucg.setPrintPos(190,110);
-      ucg.setColor(255,255,255);
-      ucg.print("RIT");
-      ucg.setColor(0,0,0);  
-      ucg.drawRBox(222,92,91,21,3);
-      freqrit=0;
-    }
-  }
-  while(digitalRead(SW_RIT) == LOW);
-}
 
 void setrit() {
   if (flagrit) {
