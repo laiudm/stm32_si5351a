@@ -57,6 +57,9 @@
 //
 ///////////////////////////////////////////////////////////////////////////////////
 
+#define BLUEPILL // tweak some i/o ports for the blue pill
+#define UNITTEST  // uncomment this to mock transmission to the 2x pcf8574 , Si5351s
+
 //---------- Library include ----------
 
 #include <Wire.h>
@@ -95,8 +98,13 @@ Ucglib_ILI9341_18x240x320_HWSPI ucg(__DC, __CS, __RST);
 #define   SW_BAND      PA0                 
 #define   SW_MODE      PC14                 
 #define   SW_STEP      PA1                // G6LBQ changed from PB14 to PA1                 
-#define   SW_RIT       PC15                  
-#define   SW_TX        PC13               // G6LBQ> PTT - connect to Gnd for TX                 
+#define   SW_RIT       PC15
+#ifdef BLUEPILL
+#define   LED          PC13
+#define   SW_TX        PA3                // need to reassign to move away from led
+#else                  
+#define   SW_TX        PC13               // G6LBQ> PTT - connect to Gnd for TX
+#endif                 
 #define   METER        PA2                // G6LBQ changed from PA1 to PA2    
 
 //----------   eeprom addresses, constants    ---------------
@@ -164,6 +172,10 @@ int       flg_freqadj = 0;                  // Frequency ADJ Flag
 long      freqb = 0;
 
 
+long interruptCount = 0;
+long lastInterruptCount = -1;
+
+
 //------------ 1st IF Frequency 45MHz For Dual Conversion IF -----------
 
 unsigned long firstIF =   45000000L;        // Added by G6LBQ 01/07/2022
@@ -172,13 +184,19 @@ unsigned long firstIF =   45000000L;        // Added by G6LBQ 01/07/2022
 //------------------  Initialization  Program  -------------------------
  
 void setup() {
+#ifdef BLUEPILL
+  while (!Serial)
+    ;
+  Serial.println("Starting setup");
+  pinMode(LED, OUTPUT);
+#endif
+  
   timepassed = millis();
 
-  afio_cfg_debug_ports(AFIO_DEBUG_NONE);          // ST-LINK(PB3,PB4,PA15,PA12,PA11) Can be used
+  //afio_cfg_debug_ports(AFIO_DEBUG_NONE);          // ST-LINK(PB3,PB4,PA15,PA12,PA11) Can be used
   
-  pinMode( ENC_A,INPUT_PULLUP);                   // PC13 pull up
-  pinMode( ENC_B,INPUT_PULLUP);                   // PC14
-
+  pinMode( ENC_A, INPUT_PULLUP);                  // PC13 pull up
+  pinMode( ENC_B, INPUT_PULLUP);                  // PC14
   attachInterrupt( ENC_A, Rotaly_enc, CHANGE);    // Encorder A
   attachInterrupt( ENC_B, Rotaly_enc, CHANGE);    //          B
 
@@ -200,18 +218,7 @@ void setup() {
   pinMode(MODE_OUT3,OUTPUT);                     // CW Mode - G6LBQ added additional mode selection
   pinMode(MODE_OUT4,OUTPUT);                     // AM Mode - G6LBQ added additional mode selection
   
-
-//Added by G6LBQ to initialize PCF8574 I/O expander 1 for BPF filters 1 to 5 
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write((0b00000000));
-  Wire.endTransmission();
-
-//Added by G6LBQ to initialize PCF8574 I/O expander 2 for BPF filters 6 to 10
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write((0b00000000));
-  Wire.endTransmission();
+  init_PCF8574();
 
   Fnc_eepINIT();
   delay(100);
@@ -254,8 +261,17 @@ void setup() {
 }
 
 //----------  Main program  ------------------------------------
+
  
 void loop() {
+  digitalWrite(LED, !digitalRead(LED));
+#ifdef UNITTEST
+  if (interruptCount != lastInterruptCount) {
+    Serial.print("Interrupts: "); Serial.println(interruptCount);
+    lastInterruptCount = interruptCount;
+  }
+  //delay(1000);
+#endif
 
 //------- IF 2nd Conversion Oscillator on CLK1 output ----------
 //
@@ -264,99 +280,18 @@ void loop() {
 // fmode 2 =CW
 // fmode 3 =AM
   
-  if (fmode == 0) {si5351aSetFrequency(2, 1,  56059000);         // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  if (fmode == 0) {setFrequency(2, 1,  56059000);         // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
   }
-  else if (fmode == 1) {si5351aSetFrequency(2, 1,  33941000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
+  else if (fmode == 1) {setFrequency(2, 1,  33941000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
   }
-  else if (fmode == 2) {si5351aSetFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  else if (fmode == 2) {setFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
   }
-  else if (fmode == 3) {si5351aSetFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  }
-  else {
-  }
-
-
-//Start of the HF Band Pass Filter logic for filters 1 to 5 added by G6LBQ
-  
-  if (freq >=150000 && freq<=1599999){
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write(0b00000001);
-  Wire.endTransmission(); 
-  }
-  else if(freq >=1600001 && freq<=1999999){
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write(0b00000010);
-  Wire.endTransmission();  
-  }
-  else if(freq >=2000001 && freq<=2999999){
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write(0b00000100);
-  Wire.endTransmission(); 
-  }
-  else if(freq >=3000001 && freq<=3999999){
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write(0b00001000);
-  Wire.endTransmission(); 
-  }
-  else if(freq >=4000001 && freq<=5999999){
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write(0b00010000);
-  Wire.endTransmission(); 
+  else if (fmode == 3) {setFrequency(2, 1,  56059000);    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
   }
   else {
-  Wire.begin();
-  Wire.beginTransmission(0x38);
-  Wire.write(0b00000000);
-  Wire.endTransmission();
   }
 
-//End of the HF Band Pass Filter logic for filters 1 to 5 added by G6LBQ
-
-//Start of the HF Band Pass Filter logic for filters 6 to 10 added by G6LBQ
-
-  if (freq >=6000001 && freq<=7999999){
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write(0b00000001);
-  Wire.endTransmission(); 
-  }
-  else if(freq >=8000001 && freq<=10999999){
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write(0b00000010);
-  Wire.endTransmission();  
-  }
-  else if(freq >=11000001 && freq<=14999999){
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write(0b00000100);
-  Wire.endTransmission(); 
-  }
-  else if(freq >=15000001 && freq<=21999999){
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write(0b00001000);
-  Wire.endTransmission(); 
-  }
-  else if(freq >=22000001 && freq<=29999999){
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write(0b00010000);
-  Wire.endTransmission(); 
-  }
-  else {
-  Wire.begin();
-  Wire.beginTransmission(0x39);
-  Wire.write(0b00000000);
-  Wire.endTransmission();
-  }
-
-//End of the HF Band Pass Filter logic for filters 6 to 10 added by G6LBQ
+  select_BPF(freq);
 
   
   if(digitalRead(SW_STEP) == LOW)               // STEP sw check
@@ -396,7 +331,7 @@ void loop() {
     else{
       if(freq != freqb){
         xtalFreq = freq;
-        si5351aSetFrequency(0, 0, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
+        setFrequency(0, 0, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
         freqt=String(freq); 
         freqlcd();
         freqb = freq;
@@ -404,11 +339,74 @@ void loop() {
     }
   }
 
-  if((flg_frqwt == 1) && (flg_bfochg == 0)){           // EEPROM auto save 2sec   
-    if(timepassed+1000 < millis()){
-      bandwrite();
+  if((flg_frqwt == 1) && (flg_bfochg == 0)){           // EEPROM auto save 2sec 
+    if(timepassed+10000 < millis()){
+#ifdef UNITTEST
+      Serial.println("EEPROM auto save");
+#else
+      bandwrite();  // don't save during testing - otherwise it will wear out the flash
+#endif
       flg_frqwt = 0;
     } 
+  }
+}
+
+//--------- PCF8574 Interfacing
+int8_t currentBank = -1;
+
+void write_PCF8574(uint8_t address, uint8_t data) {
+#ifndef UNITTEST
+  Wire.begin();
+  Wire.beginTransmission(address);
+  Wire.write(0b00000000);
+  Wire.endTransmission();
+#else
+  Serial.print("Write to "); Serial.print(address); Serial.print(": "); Serial.println(data);
+#endif
+}
+
+void init_PCF8574() {
+  write_PCF8574(0x38, 0b00000000);  //initialize PCF8574 I/O expander 1 for BPF filters 1 to 5 
+  write_PCF8574(0x39, 0b00000000);  //initialize PCF8574 I/O expander 2 for BPF filters 6 to 10
+}
+
+void select_bank(int8_t bank) {
+  // bank 0 corresponds to 0x38, port 1, bank 6 is 0x39, port 1 etc.
+  if (bank == currentBank)
+    // the correct bank is already selected; nothing to do here
+    return;
+  init_PCF8574();   // turn off all banks
+  int bit = bank % 6;
+  int bankOffset = bank/6;
+  write_PCF8574(0x38 + bankOffset, 1<<bit);
+  currentBank = bank;
+}
+
+void select_BPF(long f) {
+
+  // HF Band Pass Filter logic added by G6LBQ
+  if (freq >=150000 && freq<=1599999){
+    select_bank(0);
+  } else if(freq >=1600001 && freq<=1999999){
+    select_bank(1);
+  } else if(freq >=2000001 && freq<=2999999){
+    select_bank(2);
+  } else if(freq >=3000001 && freq<=3999999){
+    select_bank(3);
+  } else if(freq >=4000001 && freq<=5999999){
+    select_bank(4);
+  } else if (freq >=6000001 && freq<=7999999){
+    select_bank(5);
+  } else if(freq >=8000001 && freq<=10999999){
+    select_bank(6);
+  } else if(freq >=11000001 && freq<=14999999){
+    select_bank(7);
+  } else if(freq >=15000001 && freq<=21999999){
+    select_bank(8);
+  } else if(freq >=22000001 && freq<=29999999){
+    select_bank(9);
+  } else {
+    
   }
 }
 
@@ -549,11 +547,32 @@ void PLL_write(){
   }
 }
 
+// -----     Routines to interface to the Si5351s-----
+long currentFrequency[] = { -1, -1, -1 };
+
+void _setFrequency(uint8_t port, uint8_t channel, uint32_t frequency) {
+#ifndef UNITTEST
+  si5351aSetFrequency(port, channel, frequency);
+#else
+  Serial.print("Si5351 port: "); Serial.print(port); Serial.print(", chl: "); Serial.print(channel); Serial.print(", freq: "); Serial.println(frequency);
+#endif
+}
+
+void setFrequency(uint8_t port, uint8_t channel, uint32_t frequency) {
+  // don't need to track port and channel; port is unique
+  if (currentFrequency[port] == frequency)
+    // it's already set to the correct frequency; nothing further to do here
+    return;
+  _setFrequency(port, channel, frequency);
+  currentFrequency[port] = frequency;
+}
+
+
 //----------  VFO out  --------------- 
 
 void Vfo_out(long frequency){
   if(vfofreq != vfofreqb){
-    si5351aSetFrequency(0, 0, frequency);         // 01/07/2022 Updated to allow VFO to work with new si5351 Library
+    setFrequency(0, 0, frequency);         // 01/07/2022 Updated to allow VFO to work with new si5351 Library
     flg_frqwt = 1;                                // EEP Wite Flag
     timepassed = millis();
     vfofreqb = vfofreq;  
@@ -564,7 +583,7 @@ void Vfo_out(long frequency){
 
 void Bfo_out(long frequency){
   if(ifshift != ifshiftb){
-    si5351aSetFrequency(1, 2, frequency);         // 01/07/2022 Updated to allow BFO to work with new si5351 Library
+    setFrequency(1, 2, frequency);         // 01/07/2022 Updated to allow BFO to work with new si5351 Library
     flg_bfowt = 1;                                // EEP Wite Flag
     ifshiftb = ifshift;  
   }
@@ -598,8 +617,18 @@ void meter(){
 }
 
 //---------- Encoder Interrupt -----------------------
-
+void Rotaly_encHide(){  // investigate very high interupt rate
+  static long freq = 0;
+  interruptCount++;
+  unsigned char result = r.process();
+  if (result == DIR_CW) {
+    freq++;
+  } else if (result == DIR_CCW) {
+    freq--;
+  }
+}
 void Rotaly_enc(){
+  interruptCount++;
   if (flagrit==1){
     unsigned char result = r.process();
     if(result) {
@@ -789,7 +818,7 @@ int cnt = 0;
         romadd=0x010+(band*0x10);
         romf[0]=Fnc_eepRD(romadd);
         freq = xtalFreq;
-        si5351aSetFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
+        setFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
         freqt=String(freq);
         freqlcd();  
         ucg.setPrintPos(110,140);

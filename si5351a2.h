@@ -158,8 +158,9 @@ void si5351aOutputOff(uint8_t port, uint8_t clk){
 //
 // Note - this code assumes only a single CLK output is being used.
 ////////////////////////////////////////////////////////////////////////
+void si5351aSetFrequency(uint8_t port, uint8_t channel, uint32_t frequency){ }
 
-void si5351aSetFrequency(uint8_t port, uint8_t channel, uint32_t frequency){
+void si5351aSetFrequencyHide(uint8_t port, uint8_t channel, uint32_t frequency){
   uint32_t pllFreq;
 //  uint32_t xtalFreq = XTAL_FREQ;        // 2017/9/29
   uint32_t l;
