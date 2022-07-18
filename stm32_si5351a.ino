@@ -294,15 +294,6 @@ void loop() {
   }
 #endif
 
-//------- IF 2nd Conversion Oscillator on CLK1 output ----------
-
-  /* moved this logic into setmode() so that it doesn't run on every loop
-  if      (fmode == MODE_LSB) {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  else if (fmode == MODE_USB) {setFrequency(2, 1,  33941000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
-  else if (fmode == MODE_CW)  {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  else if (fmode == MODE_AM)  {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
-  */
-
   select_BPF(freq);
   
   int event = b.getButtonEvent();
@@ -355,7 +346,7 @@ void loop() {
   } else{
       if(freq != freqb){
         xtalFreq = freq;
-        setFrequency(0, 0, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
+        setFrequency(VFO_PORT, VFO_CHL, 10000000);           // 01/07/2022 Updated to allow VFO calibration to work with new si5351 Library
         freqlcd(freq);
         freqb = freq;
       }
@@ -843,7 +834,7 @@ void freqAdjust() {
     romadd=0x010+(band*0x10);
     romf[0]=Fnc_eepRD(romadd);
     freq = xtalFreq;
-    setFrequency(0, 0, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
+    setFrequency(VFO_PORT, VFO_CHL, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
     freqlcd(freq);  
     ucg.setPrintPos(110,140);
     ucg.setFont(ucg_font_fub17_tr);
