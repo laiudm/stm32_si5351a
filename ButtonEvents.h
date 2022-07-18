@@ -23,14 +23,17 @@ class ButtonEvents {
     int_fast32_t nextButtonPoll = 0;
 
     int debounce(Button* b) {
+      // debounce algorithm insprired by Listing 2 at https://www.embedded.com/my-favorite-software-debouncers/
+      // regard a button's input as valid only when it is stable on 4 consecutive samples
       int buttonPosition = digitalRead(b->pin);
       b->stateHistory = ((b->stateHistory<<1) | buttonPosition) & 0x0f;  
-      if (b->stateHistory == 0x0) {b->debouncedButtonState = true;}; // input is only valid on 4x consecutive polls
+      if (b->stateHistory == 0x0) {b->debouncedButtonState = true;}; 
       if (b->stateHistory == 0xf) {b->debouncedButtonState = false;};
       return b->debouncedButtonState;
     }
 
     int getButtonEvent(Button* b) {
+      // use a Finite State Machine to turn debounced inputs into events
       bool btn = debounce(b);
       int result = noChangeEvent;
       switch (b->transitionState) {
@@ -87,15 +90,16 @@ class ButtonEvents {
 
 
     // call this often in the main loop.
-    int process() {
+    int getButtonEvent() {
+      // poll the button inputs no closer than every 10 ms
       int_fast32_t currentTime = millis();
       if (currentTime >= nextButtonPoll) {
-        nextButtonPoll = currentTime + 10;  // poll no closer than every 10 ms
+        nextButtonPoll = currentTime + 10;  
         Button* b = next;
         while(b) {  //scan down the linked list
           int event = getButtonEvent(b);
           if (event != noChangeEvent) {
-            return event; // return the first key event found, ignoring later keys. Pick them up next time
+            return event; // return with the first key event found. Ignoring later keys is fine; they'll be picked on the next call
           }
           b = b->next;
         }

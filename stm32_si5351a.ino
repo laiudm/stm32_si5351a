@@ -57,18 +57,21 @@
 //
 ///////////////////////////////////////////////////////////////////////////////////
 
-#define BLUEPILL // tweak some i/o ports for the blue pill
-#define UNITTEST  // uncomment this to mock transmission to the 2x pcf8574 , Si5351s
+#define BLUEPILL    // uncomment to tweak some i/o ports for the blue pill, and enable Serial
+#define MOCKI2C     // uncomment this to mock transmission to the 2x pcf8574 , Si5351s
+#define TRACEI2C    // uncomment to generate debug traces on I2C outputs. BLUEPILL must be defined for Serial to work
+#define DEBUG
 
 //---------- Library include ----------
 
+//#include "Arduino.h"
 #include <Wire.h>
-#include "si5351a2.h"                     
 #include <SPI.h>
 #include <EEPROM.h>
+
+#include "si5351a2.h" 
 #include "Rotary.h"                     
 #include "src/Ucglib.h"
-#include "Arduino.h"
 #include "ButtonEvents.h"
 
 //----------   Encoder setting  ---------------
@@ -108,12 +111,14 @@ ButtonEvents b = ButtonEvents(EVT_NOCHANGE);
 #define   SW_MODE      PC14                 
 #define   SW_STEP      PA1                // G6LBQ changed from PB14 to PA1                 
 #define   SW_RIT       PC15
+
 #ifdef BLUEPILL
 #define   LED          PC13
 #define   SW_TX        PA3                // need to reassign to move away from led
 #else                  
 #define   SW_TX        PC13               // G6LBQ> PTT - connect to Gnd for TX
-#endif                 
+#endif
+
 #define   METER        PA2                // G6LBQ changed from PA1 to PA2    
 
 //----------   eeprom addresses, constants    ---------------
@@ -144,7 +149,6 @@ long      romb[5];                        // EEPROM bfo copy buffer
 long      vfofreq = 0;
 long      vfofreqb;                 
 
-char f100m,f10m,fmega,f100k,f10k,f1k,f100,f10,f1;
 
 int       rit        = 0;
 int       fstep      = 100;
@@ -259,7 +263,7 @@ void setup() {
   if (steprom==6){fstep=100000;}                 // Added by G6LBQ FOR 100kHz step
   if (steprom==7){fstep=1000000;}                // Added by G6LBQ FOR 1MHz step
   banddataout();
-  screen01();
+  drawStaticScreen();
   chlcd();
 
   modeset();
@@ -271,13 +275,15 @@ void setup() {
 
  
 void loop() {
+#ifdef BLUEPILL
   digitalWrite(LED, !digitalRead(LED));
-#ifdef UNITTEST
+#endif
+
+#ifdef DEBUG
   if (interruptCount != lastInterruptCount) {
     Serial.print("Interrupts: "); Serial.println(interruptCount);
     lastInterruptCount = interruptCount;
   }
-  //delay(1000);
 #endif
 
 //------- IF 2nd Conversion Oscillator on CLK1 output ----------
@@ -289,7 +295,7 @@ void loop() {
 
   select_BPF(freq);
   
-  int event = b.process();
+  int event = b.getButtonEvent();
   switch (event) {
     case EVT_NOCHANGE:
       break; // nothing to do
@@ -348,7 +354,7 @@ void loop() {
 
   if((flg_frqwt == 1) && (flg_bfochg == 0)){           // EEPROM auto save 2sec 
     if(timepassed+10000 < millis()){
-#ifdef UNITTEST
+#ifdef BLUEPILL
       Serial.println("EEPROM auto save");
 #else
       bandwrite();  // don't save during testing - otherwise it will wear out the flash
@@ -362,12 +368,13 @@ void loop() {
 int8_t currentBank = -1;
 
 void write_PCF8574(uint8_t address, uint8_t data) {
-#ifndef UNITTEST
+#ifndef MOCKI2C
   Wire.begin();
   Wire.beginTransmission(address);
   Wire.write(0b00000000);
   Wire.endTransmission();
-#else
+#endif
+#ifdef TRACEI2C
   Serial.print("Write to "); Serial.print(address); Serial.print(": "); Serial.println(data);
 #endif
 }
@@ -558,9 +565,10 @@ void PLL_write(){
 long currentFrequency[] = { -1, -1, -1 };   // track output frequences for changes
 
 void _setFrequency(uint8_t port, uint8_t channel, uint32_t frequency) {
-#ifndef UNITTEST
+#ifndef MOCKI2C
   si5351aSetFrequency(port, channel, frequency);
-#else
+#endif
+#ifdef TRACEI2C
   Serial.print("Si5351 port: "); Serial.print(port); Serial.print(", chl: "); Serial.print(channel); Serial.print(", freq: "); Serial.println(frequency);
 #endif
 }
@@ -839,15 +847,14 @@ void setstep(){
   else{
     fstep=fstep * 10;
   } 
- steplcd(); 
- //while(digitalRead(SW_STEP) == LOW);
+  steplcd(); 
 }
 
 void setstepDown() {
   if (fstep==1) {
-    fstep == 1000000;
+    fstep = 1000000;
   } else {
-    fstep=fstep / 10;
+    fstep = fstep / 10;
   }
   steplcd();
 }
@@ -872,6 +879,7 @@ void steplcd(){
 //----------- Main frequency screen -------------------
 
 void freqlcd(long freq){
+  static char f100m,f10m,fmega,f100k,f10k,f1k,f100,f10,f1 = -1;
   String freqt = String(freq);
   ucg.setFont(ucg_font_fub35_tn); 
   int mojisuu=(freqt.length());
@@ -985,7 +993,7 @@ void freqlcd(long freq){
 }
 //----------- Basic Screen -------------------------
 
-void screen01(){
+void drawStaticScreen(){
   ucg.setColor(255,255,255);
   ucg.drawRFrame(1,1,314,55,5);
   ucg.drawRFrame(2,2,312,53,5);
@@ -994,17 +1002,6 @@ void screen01(){
   ucg.drawRBox(75,60,60,25,3);
   ucg.drawRBox(5,90,60,25,3);
   ucg.drawRBox(75,90,60,25,3);
-  ucg.setFont(ucg_font_fub17_tr);
-  ucg.setPrintPos(12,82);
-  ucg.setColor(0,0,0);
-  ucg.print("LSB");
-  ucg.setPrintPos(82,82);
-  ucg.print("USB");
-  ucg.setPrintPos(12,112);
-  ucg.print("C W");
-  ucg.setPrintPos(82,112);
-  ucg.print("A M"); 
-  ucg.setColor(255,255,255);
   ucg.drawRFrame(220,60,95,25,3);
   ucg.drawRFrame(220,90,95,25,3);
   ucg.setFont(ucg_font_fub11_tr);
@@ -1022,10 +1019,7 @@ void screen01(){
   ucg.setPrintPos(10,230);
   ucg.setColor(235,0,200);
   ucg.print( "        G6LBQ Irwell HF Transceiver      "); 
-  ucg.setFont(ucg_font_fub35_tr);
-    ucg.setColor(0,255,0);
-    ucg.setPrintPos(273,45);
-    ucg.print("0");    
+  //freqlcd(0);   
 }
 
 //---------- Band data call from eeprom ----------
@@ -1056,7 +1050,6 @@ void bandcall(){
   freqlcd(freq);  
   banddataout();
   chlcd();
- //while(digitalRead(SW_BAND) == LOW);
 }
 
 //---------- Band data write to eeprom ----------
