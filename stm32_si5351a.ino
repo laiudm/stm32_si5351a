@@ -364,8 +364,7 @@ void loop() {
   }
 }
 
-//--------- PCF8574 Interfacing
-int8_t currentBank = -1;
+//--------- PCF8574 Interfacing ----------------------------------
 
 void write_PCF8574(uint8_t address, uint8_t data) {
 #ifndef MOCKI2C
@@ -384,7 +383,10 @@ void init_PCF8574() {
   write_PCF8574(0x39, 0b00000000);  //initialize PCF8574 I/O expander 2 for BPF filters 6 to 10
 }
 
+//--------- Filter Bank Selection ---------------------------------
+
 void select_bank(int8_t bank) {
+  static int8_t currentBank = -1;
   // bank 0 corresponds to 0x38, port 1, bank 6 is 0x39, port 1 etc.
   if (bank == currentBank)
     // the correct bank is already selected; nothing to do here
