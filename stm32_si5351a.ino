@@ -159,7 +159,9 @@ long      vfofreqb;
 
 
 int       rit        = 0;
-int       fstep      = 100;
+uint16    fstep      = 2;     // index into the fstepRates table
+static const long fstepRates[] = {1, 10, 100, 1000, 10000, 100000, 1000000};
+#define fstepRatesSize (sizeof(fstepRates)/sizeof(fstepRates[0]))
 uint16    steprom    = 1;
 uint16    fmode      = MODE_AM;
 uint16    fmodeb     = MODE_AM;
@@ -255,7 +257,7 @@ void setup() {
   freqmin = romf[1];
   freqmax = romf[2];
   Status = EEPROM.read(romadd+12,&fmode);
-  Status = EEPROM.read(romadd+14,&steprom);
+  Status = EEPROM.read(romadd+14,&fstep);
 
   eep_rombadd=EEP_IFSHIFT;                             // EEPROM read(BFO)
   for (int i=0; i<4;i++){
@@ -263,13 +265,6 @@ void setup() {
     eep_bfo[i] = romb[i];    
   }
 
-  if (steprom==1){fstep=1;}                      // STEP set 1Hz
-  if (steprom==2){fstep=10;}                     // STEP set 10Hz 
-  if (steprom==3){fstep=100;}                    // STEP set 100Hz 
-  if (steprom==4){fstep=1000;}                   // Added by G6LBQ FOR 1kHz step
-  if (steprom==5){fstep=10000;}                  // Added by G6LBQ FOR 10kHz step
-  if (steprom==6){fstep=100000;}                 // Added by G6LBQ FOR 100kHz step
-  if (steprom==7){fstep=1000000;}                // Added by G6LBQ FOR 1MHz step
   banddataout();
   drawStaticScreen();
   chlcd();
@@ -442,7 +437,7 @@ void band2eep(){
     eep_freq[1]=1800000;
     eep_freq[2]=2000000;
     eep_fmode=MODE_LSB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
   
     eep_romadd=0x020;                   // BAND:2
@@ -450,7 +445,7 @@ void band2eep(){
     eep_freq[1]=3500000;
     eep_freq[2]=3800000;
     eep_fmode=MODE_LSB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 
     eep_romadd=0x030;                   // BAND:3
@@ -458,7 +453,7 @@ void band2eep(){
     eep_freq[1]=7000000;
     eep_freq[2]=7200000;
     eep_fmode=MODE_LSB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 
     eep_romadd=0x040;                   // BAND:4
@@ -466,7 +461,7 @@ void band2eep(){
     eep_freq[1]=14000000;
     eep_freq[2]=14350000;
     eep_fmode=MODE_USB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 
     eep_romadd=0x050;                   // BAND:5
@@ -474,7 +469,7 @@ void band2eep(){
     eep_freq[1]=18000000;
     eep_freq[2]=18200000;
     eep_fmode=MODE_USB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
   
     eep_romadd=0x060;                   // BAND:6
@@ -482,7 +477,7 @@ void band2eep(){
     eep_freq[1]=21000000;
     eep_freq[2]=24990000;
     eep_fmode=MODE_USB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 
     eep_romadd=0x070;                   // BAND:7
@@ -490,7 +485,7 @@ void band2eep(){
     eep_freq[1]=28000000;
     eep_freq[2]=29700000;
     eep_fmode=MODE_USB;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 
     eep_romadd=0x080;                   // BAND:8
@@ -498,7 +493,7 @@ void band2eep(){
     eep_freq[1]=500000;
     eep_freq[2]=30000000;
     eep_fmode=MODE_AM;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 	
 	// Andy - repeat this pattern for your 2x additional filters
@@ -507,7 +502,7 @@ void band2eep(){
     eep_freq[1]=500000;
     eep_freq[2]=30000000;
     eep_fmode=MODE_AM;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
 	
 	eep_romadd=0x0A0;                   // BAND:10
@@ -515,7 +510,7 @@ void band2eep(){
     eep_freq[1]=500000;
     eep_freq[2]=30000000;
     eep_fmode=MODE_AM;
-    eep_fstep=3;
+    eep_fstep=2;
     band2write();
     
     eep_rombadd=EEP_IFSHIFT;             // BFO ROMadd:0x090
@@ -651,13 +646,13 @@ void Rotary_enc(){
     unsigned char result = r.process();
     if(result) {
       if(result == DIR_CW){  
-        freqrit=freqrit+fstep;
+        freqrit=freqrit+fstepRates[fstep];
         if (freqrit>=10000){
           freqrit=10000;
         }
      }
      else{
-      freqrit=freqrit-fstep;
+      freqrit=freqrit-fstepRates[fstep];
       if (freqrit<=-10000){
         freqrit=-10000;
       }
@@ -669,11 +664,11 @@ void Rotary_enc(){
     unsigned char result = r.process();
     if(result) {
       if(result == DIR_CW){  
-        freq=freq+fstep;
+        freq=freq+fstepRates[fstep];
         if((flg_bfochg == 0) && (flg_freqadj == 0) && (freq>=freqmax)){freq=freqmax;}
       }
       else{
-        freq=freq-fstep;
+        freq=freq-fstepRates[fstep];
         if((flg_bfochg == 0) && (flg_freqadj == 0) && (freq<=freqmin)){freq=freqmin;}
       }  
     }
@@ -848,25 +843,18 @@ void freqAdjust() {
 //-------------- encoder frequency step set -----------
 
 void setstep(){
-  if (fstep==1000000){                        // G6LBQ Added additional leading zero's for extra freq steps
-    fstep=1;
-  }
-  else{
-    fstep=fstep * 10;
-  } 
+  fstep = (fstep + 1) % fstepRatesSize;
   steplcd(); 
 }
 
 void setstepDown() {
-  if (fstep==1) {
-    fstep = 1000000;
-  } else {
-    fstep = fstep / 10;
-  }
+  if (fstep==0) fstep = fstepRatesSize;
+  fstep--;
   steplcd();
 }
 
 //------------- Step Screen ---------------------------
+static const String stepText[] = {"     1Hz", "    10Hz", "   100Hz", "    1KHz", "   10KHz", " 100KHz", "    1MHz"};
 
 void steplcd(){
   ucg.setColor(0,0,0);
@@ -874,13 +862,7 @@ void steplcd(){
   ucg.setFont(ucg_font_fub17_tr);
   ucg.setColor(255,255,255);
   ucg.setPrintPos(220,80);
-  if (fstep==1){ucg.print("     1Hz");}
-  if (fstep==10){ucg.print("    10Hz");}
-  if (fstep==100){ucg.print("   100Hz");}
-  if (fstep==1000){ucg.print("    1KHz");}      // Added by G6LBQ FOR 1kHz step
-  if (fstep==10000){ucg.print("   10KHz");}     // Added by G6LBQ FOR 10kHz step
-  if (fstep==100000){ucg.print(" 100KHz");}     // Added by G6LBQ FOR 100kHz step
-  if (fstep==1000000){ucg.print("    1MHz");}   // Added by G6LBQ FOR 1MHz step
+  ucg.print(stepText[fstep]);
 }
 
 //----------- Main frequency screen -------------------
@@ -1042,15 +1024,7 @@ void bandcall(){
   freqmin = romf[1];
   freqmax = romf[2];
   Status = EEPROM.read(romadd+12,&fmode);
-  Status = EEPROM.read(romadd+14,&steprom);
-
-  if (steprom==1){fstep=1;}
-  if (steprom==2){fstep=10;}
-  if (steprom==3){fstep=100;}
-  if (steprom==4){fstep=1000;}      // Added by G6LBQ FOR 1kHz step
-  if (steprom==5){fstep=10000;}     // Added by G6LBQ FOR 10kHz step
-  if (steprom==6){fstep=100000;}    // Added by G6LBQ FOR 100kHz step
-  if (steprom==7){fstep=1000000;}   // Added by G6LBQ FOR 1MHz step
+  Status = EEPROM.read(romadd+14,&fstep);
 
   modeset();
   steplcd();
@@ -1066,14 +1040,7 @@ void bandwrite(){
     Fnc_eepWT(freq,romadd);
   Status = EEPROM.write(EEP_BAND,band);
   Status = EEPROM.write(romadd+12,fmode);
-  if (fstep==1){steprom=1;}
-  if (fstep==10){steprom=2;}
-  if (fstep==100){steprom=3;}
-  if (fstep==1000){steprom=4;}      // Added by G6LBQ FOR 1kHz step
-  if (fstep==10000){steprom=5;}     // Added by G6LBQ FOR 10kHz step
-  if (fstep==100000){steprom=6;}    // Added by G6LBQ FOR 100kHz step
-  if (fstep==1000000){steprom=7;}   // Added by G6LBQ FOR 1MHz step
-  Status = EEPROM.write(romadd+14,steprom);
+  Status = EEPROM.write(romadd+14,fstep);
 }
 
 //----------  Function EEPROM Initialize  ---------
