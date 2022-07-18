@@ -130,6 +130,14 @@ ButtonEvents b = ButtonEvents(EVT_NOCHANGE);
 #define   EEP_BANDMAX  10                 // (Was 6 band) G6LBQ 
 #define   EEP_VERSION  74                 // Update the version no. when the eeprom format changes
 
+//---------  Si5351 Assignments ---------------------------
+#define   VFO_PORT     0
+#define   VFO_CHL      0
+#define   BFO_PORT     1
+#define   BFO_CHL      2
+#define   CONV_PORT    2
+#define   CONV_CHL     1
+
 //---------- Modes ---------------------
 
 typedef enum {MODE_LSB, MODE_USB, MODE_CW, MODE_AM} modes;
@@ -287,11 +295,13 @@ void loop() {
 #endif
 
 //------- IF 2nd Conversion Oscillator on CLK1 output ----------
-  
+
+  /* moved this logic into setmode() so that it doesn't run on every loop
   if      (fmode == MODE_LSB) {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
   else if (fmode == MODE_USB) {setFrequency(2, 1,  33941000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 33.941MHz
   else if (fmode == MODE_CW)  {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
   else if (fmode == MODE_AM)  {setFrequency(2, 1,  56059000);}    // Added by G6LBQ 01/07/2022 to set conversion oscillator to 56.059MHz
+  */
 
   select_BPF(freq);
   
@@ -589,7 +599,7 @@ void setFrequency(uint8_t port, uint8_t channel, uint32_t frequency) {
 
 void Vfo_out(long frequency){
   if(vfofreq != vfofreqb){
-    setFrequency(0, 0, frequency);         // 01/07/2022 Updated to allow VFO to work with new si5351 Library
+    setFrequency(VFO_PORT, VFO_CHL, frequency);         // 01/07/2022 Updated to allow VFO to work with new si5351 Library
     flg_frqwt = 1;                                // EEP Wite Flag
     timepassed = millis();
     vfofreqb = vfofreq;  
@@ -600,7 +610,7 @@ void Vfo_out(long frequency){
 
 void Bfo_out(long frequency){
   if(ifshift != ifshiftb){
-    setFrequency(1, 2, frequency);         // 01/07/2022 Updated to allow BFO to work with new si5351 Library
+    setFrequency(BFO_PORT, BFO_CHL, frequency);         // 01/07/2022 Updated to allow BFO to work with new si5351 Library
     flg_bfowt = 1;                                // EEP Wite Flag
     ifshiftb = ifshift;  
   }
@@ -723,14 +733,18 @@ void modeset(){
   switch(fmode){
     case MODE_LSB:
       ifshift = eep_bfo[0];
+      setFrequency(CONV_PORT, CONV_CHL,  56059000);
       break;
     case MODE_USB:                                      
       ifshift = eep_bfo[1];
+      setFrequency(CONV_PORT, CONV_CHL,  33941000);
       break;
     case MODE_CW:
       ifshift = eep_bfo[2];
+      setFrequency(CONV_PORT, CONV_CHL,  56059000);
       break;
     case MODE_AM:
+      setFrequency(CONV_PORT, CONV_CHL,  56059000);
       break;
   }
 
