@@ -144,7 +144,6 @@ typedef enum {MODE_LSB, MODE_USB, MODE_CW, MODE_AM} modes;
 
 //---------- Variable setting ----------
 
-long      romf[4];                        // EEPROM freq copy buffer
 long      freq    = 7100000;
 long      freqmax = 7200000;
 long      freqmin = 7000000;
@@ -179,12 +178,7 @@ uint16    Status;
 uint16    Data;            
 
 //unsigned long eep_xtalfreq;
-unsigned long eep_freq[4];
-int       eep_romadd;
-int       eep_fstep;
-int       eep_fmode;
 unsigned long eep_bfo[6];
-int       eep_rombadd;
 
 int_fast32_t timepassed;                    // int to hold the arduino miilis since startup
 int       flg_frqwt = 0;                    // Frequency data Wite Flag(EEPROM)
@@ -250,16 +244,13 @@ void setup() {
   xtalFreq = Fnc_eepRD(EEP_XTAL);
   Status = EEPROM.read(EEP_BAND,&band);          // EEPROM read(frequency)
   romadd=0x010+(band*0x10);
-  for (int i=0; i<3;i++){
-   romf[i]=Fnc_eepRD((romadd+4*i));
-  }
-  freq = romf[0];
-  freqmin = romf[1];
-  freqmax = romf[2];
+  freq =    Fnc_eepRD(romadd+ 0);
+  freqmin = Fnc_eepRD(romadd+ 8);
+  freqmax = Fnc_eepRD(romadd+ 12);
   Status = EEPROM.read(romadd+12,&fmode);
   Status = EEPROM.read(romadd+14,&fstep);
 
-  eep_rombadd=EEP_IFSHIFT;                             // EEPROM read(BFO)
+  int eep_rombadd=EEP_IFSHIFT;                             // EEPROM read(BFO)
   for (int i=0; i<4;i++){
     romb[i]=Fnc_eepRD((eep_rombadd+(4*i)));
     eep_bfo[i] = romb[i];    
@@ -432,93 +423,25 @@ void band2eep(){
     xtalFreq = XTAL_FREQ;
     Fnc_eepWT(xtalFreq,EEP_XTAL);
     
-    eep_romadd=0x010;                   // BAND:1
-    eep_freq[0]=1800000;
-    eep_freq[1]=1800000;
-    eep_freq[2]=2000000;
-    eep_fmode=MODE_LSB;
-    eep_fstep=2;
-    band2write();
-  
-    eep_romadd=0x020;                   // BAND:2
-    eep_freq[0]=3500000;
-    eep_freq[1]=3500000;
-    eep_freq[2]=3800000;
-    eep_fmode=MODE_LSB;
-    eep_fstep=2;
-    band2write();
-
-    eep_romadd=0x030;                   // BAND:3
-    eep_freq[0]=7000000;
-    eep_freq[1]=7000000;
-    eep_freq[2]=7200000;
-    eep_fmode=MODE_LSB;
-    eep_fstep=2;
-    band2write();
-
-    eep_romadd=0x040;                   // BAND:4
-    eep_freq[0]=14000000;
-    eep_freq[1]=14000000;
-    eep_freq[2]=14350000;
-    eep_fmode=MODE_USB;
-    eep_fstep=2;
-    band2write();
-
-    eep_romadd=0x050;                   // BAND:5
-    eep_freq[0]=18000000;
-    eep_freq[1]=18000000;
-    eep_freq[2]=18200000;
-    eep_fmode=MODE_USB;
-    eep_fstep=2;
-    band2write();
-  
-    eep_romadd=0x060;                   // BAND:6
-    eep_freq[0]=21000000;
-    eep_freq[1]=21000000;
-    eep_freq[2]=24990000;
-    eep_fmode=MODE_USB;
-    eep_fstep=2;
-    band2write();
-
-    eep_romadd=0x070;                   // BAND:7
-    eep_freq[0]=28000000;
-    eep_freq[1]=28000000;
-    eep_freq[2]=29700000;
-    eep_fmode=MODE_USB;
-    eep_fstep=2;
-    band2write();
-
-    eep_romadd=0x080;                   // BAND:8
-    eep_freq[0]=500000;
-    eep_freq[1]=500000;
-    eep_freq[2]=30000000;
-    eep_fmode=MODE_AM;
-    eep_fstep=2;
-    band2write();
+    band2write(0x010,  1800000,  1800000,  2000000, MODE_LSB, 2);
+    band2write(0x020,  3500000,  3500000,  3800000, MODE_LSB, 2);
+    band2write(0x030,  7000000,  7000000,  7200000, MODE_LSB, 2);
+    band2write(0x040, 14000000, 14000000, 14350000, MODE_USB, 2);
+    band2write(0x050, 18000000, 18000000, 18200000, MODE_USB, 2);
+    band2write(0x060, 21000000, 21000000, 24990000, MODE_USB, 2);
+    band2write(0x070, 28000000, 28000000, 29700000, MODE_USB, 2);
+    band2write(0x080,   500000,   500000, 30000000, MODE_AM, 2);
 	
-	// Andy - repeat this pattern for your 2x additional filters
-    eep_romadd=0x090;                   // BAND:9
-    eep_freq[0]=500000;
-    eep_freq[1]=500000;
-    eep_freq[2]=30000000;
-    eep_fmode=MODE_AM;
-    eep_fstep=2;
-    band2write();
-	
-	eep_romadd=0x0A0;                   // BAND:10
-    eep_freq[0]=500000;
-    eep_freq[1]=500000;
-    eep_freq[2]=30000000;
-    eep_fmode=MODE_AM;
-    eep_fstep=2;
-    band2write();
+	  // Andy - repeat this pattern for your 2x additional filters
+    band2write(0x090,   500000,   500000, 30000000, MODE_AM, 2);
+    band2write(0x0a0,   500000,   500000, 30000000, MODE_AM, 2);
     
-    eep_rombadd=EEP_IFSHIFT;             // BFO ROMadd:0x090
     eep_bfo[0]=11056570;                 // LSB BFO Frequency
     eep_bfo[1]=11059840;                 // USB BFO Frequency
     eep_bfo[2]=11058400;                 // CW  BFO Frequency
 //  eep_bfo[3]=11058200;                 // AM Not needed for testing only
-    
+
+    int eep_rombadd=EEP_IFSHIFT;             // BFO ROMadd:0x090    
     for (int i=0;i<4;i++){
       Fnc_eepWT(eep_bfo[i],(eep_rombadd+4*i));
     }
@@ -529,10 +452,10 @@ void band2eep(){
 
 //----------  Function Band Write to EEPROM  ---------------        
 
-void band2write(){
-  for (int i=0;i<3;i++){
-    Fnc_eepWT(eep_freq[i],(eep_romadd+4*i));
-  }
+void band2write(int eep_romadd, unsigned long freq, unsigned long freqmin, unsigned long freqmax, int eep_fmode, int eep_fstep){
+  Fnc_eepWT(freq,    eep_romadd+0);
+  Fnc_eepWT(freqmin, eep_romadd+4);
+  Fnc_eepWT(freqmax, eep_romadd+8);
   Status = EEPROM.write(eep_romadd+12,eep_fmode);
   Status = EEPROM.write(eep_romadd+14,eep_fstep);
 }
@@ -560,6 +483,7 @@ void PLL_write(){
 }
 
 // -----     Routines to interface to the Si5351s-----
+
 long currentFrequency[] = { -1, -1, -1 };   // track output frequences for changes
 
 void _setFrequency(uint8_t port, uint8_t channel, uint32_t frequency) {
@@ -752,17 +676,18 @@ void modesw() {
 
 void bfoAdjust() {
   if (flg_bfochg) {
+    // exit BFO ADJ mode
     ifshift = freq;
     Fnc_eepWT(ifshift,0x090+(fmode * 4));     // data write
     eep_bfo[fmode] = ifshift;
-    freq = romf[0];
+    romadd=0x010+(band*0x10);
+    freq = Fnc_eepRD(romadd);             // restore freq to last freq tuned to in this band
     freqlcd(freq);  
     ucg.setFont(ucg_font_fub17_tr);
     ucg.setColor(0,0,0);
     ucg.drawBox(100,120,250,30);  //45
   } else {
-    romadd=0x010+(band*0x10);
-    romf[0]=Fnc_eepRD(romadd);
+    // enter BFO ADJ mode
     freq = Fnc_eepRD(0x090+(fmode * 4));
     freqlcd(freq);  
     ucg.setPrintPos(110,140);
@@ -817,17 +742,19 @@ void ritlcd(){
 
 void freqAdjust() {
   if(flg_freqadj) {
+    // leave FREQ ADJ mode
     xtalFreq = freq;
     Fnc_eepWT(xtalFreq,EEP_XTAL);             // data write
-    freq = romf[0];
+    
+    romadd=0x010+(band*0x10);
+    freq = Fnc_eepRD(romadd);     // restore freq to last freq tuned to in this band
     freqlcd(freq);  
     ucg.setFont(ucg_font_fub17_tr);
     ucg.setColor(0,0,0);
     ucg.drawBox(100,120,250,30);              //45
     flg_freqadj = 0;
   } else {
-    romadd=0x010+(band*0x10);
-    romf[0]=Fnc_eepRD(romadd);
+    // enter FREQ ADJ mode
     freq = xtalFreq;
     setFrequency(VFO_PORT, VFO_CHL, 10000000);      // 01/07/2022 Updated to allow Rit to work with new si5351 Library 
     freqlcd(freq);  
@@ -1017,12 +944,9 @@ void bandcall(){
   band=band+1;
   if (band>(EEP_BANDMAX-1)){band=0;}
   romadd=0x010+(band*0x010);
- for (int i=0; i<3;i++){
-   romf[i]=Fnc_eepRD((romadd+4*i));
-  }
-  freq = romf[0];
-  freqmin = romf[1];
-  freqmax = romf[2];
+  freq    = Fnc_eepRD(romadd+ 0);
+  freqmin = Fnc_eepRD(romadd+ 8);
+  freqmax = Fnc_eepRD(romadd+12);
   Status = EEPROM.read(romadd+12,&fmode);
   Status = EEPROM.read(romadd+14,&fstep);
 
