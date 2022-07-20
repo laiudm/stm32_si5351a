@@ -245,8 +245,8 @@ void setup() {
   Status = EEPROM.read(EEP_BAND,&band);          // EEPROM read(frequency)
   romadd=0x010+(band*0x10);
   freq =    Fnc_eepRD(romadd+ 0);
-  freqmin = Fnc_eepRD(romadd+ 8);
-  freqmax = Fnc_eepRD(romadd+ 12);
+  freqmin = Fnc_eepRD(romadd+ 4);
+  freqmax = Fnc_eepRD(romadd+ 8);
   Status = EEPROM.read(romadd+12,&fmode);
   Status = EEPROM.read(romadd+14,&fstep);
 
@@ -945,8 +945,8 @@ void bandcall(){
   if (band>(EEP_BANDMAX-1)){band=0;}
   romadd=0x010+(band*0x010);
   freq    = Fnc_eepRD(romadd+ 0);
-  freqmin = Fnc_eepRD(romadd+ 8);
-  freqmax = Fnc_eepRD(romadd+12);
+  freqmin = Fnc_eepRD(romadd+ 4);
+  freqmax = Fnc_eepRD(romadd+ 8);
   Status = EEPROM.read(romadd+12,&fmode);
   Status = EEPROM.read(romadd+14,&fstep);
 
@@ -971,9 +971,14 @@ void bandwrite(){
 
 void Fnc_eepINIT(){
   uint16 dummy;
-  
-  EEPROM.PageBase0 = 0x801F000;
-  EEPROM.PageBase1 = 0x801F800;
+  //Refer to ...\arduino-1.8.13\portable\packages\stm32duino\hardware\STM32F1\2021.5.31\libraries\EEPROM\EEPROM.cpp, EEPROM.h 
+  //Serial.print("EEPROM_PAGE0_BASE = "); Serial.print(EEPROM_PAGE0_BASE, HEX); Serial.print(" "); Serial.println(EEPROM_PAGE0_BASE == 0x801F000);
+  //Serial.print("EEPROM_PAGE1_BASE = "); Serial.print(EEPROM_PAGE1_BASE, HEX); Serial.print(" "); Serial.println(EEPROM_PAGE1_BASE == 0x801F800);
+  //Serial.print("EEPROM_PAGE_SIZE = ");  Serial.print(EEPROM_PAGE_SIZE,  HEX); Serial.print(" "); Serial.println(EEPROM_PAGE_SIZE  == 0x400);
+  //long addr = (long)&bandwrite;
+  //Serial.print("Addr = "); Serial.println(addr, HEX);
+  EEPROM.PageBase0 = 0x801F000;         // 0x801F800 default values. So these settings move the "eeprom" storage down a bit. Why? Not for the bootloader - it's at the start of memory
+  EEPROM.PageBase1 = 0x801F800;         // 0x801FC00 
   EEPROM.PageSize  = 0x400;             // 2kB
   dummy = EEPROM.init();
 }
