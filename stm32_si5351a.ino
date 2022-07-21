@@ -654,6 +654,7 @@ void modeset(){
       setFrequency(CONV_PORT, CONV_CHL,  56059000);
       break;
     case MODE_AM:
+      ifshift = eep_bfo[3];
       setFrequency(CONV_PORT, CONV_CHL,  56059000);
       break;
   }
