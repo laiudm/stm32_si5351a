@@ -678,7 +678,7 @@ void bfoAdjust() {
   if (flg_bfochg) {
     // exit BFO ADJ mode
     ifshift = freq;
-    Fnc_eepWT(ifshift,0x090+(fmode * 4));     // data write
+    Fnc_eepWT(ifshift,EEP_IFSHIFT+(fmode * 4));     // data write
     eep_bfo[fmode] = ifshift;
     romadd=0x010+(band*0x10);
     freq = Fnc_eepRD(romadd);             // restore freq to last freq tuned to in this band
