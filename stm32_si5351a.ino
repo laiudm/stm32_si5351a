@@ -198,7 +198,7 @@ long lastInterruptCount = -1;
 
 unsigned long firstIF =   45000000L;        // Added by G6LBQ 01/07/2022
 
-
+int_fast32_t interruptsTimeExpired = 0; 
 //------------------  Initialization  Program  -------------------------
  
 void setup() {
@@ -263,20 +263,28 @@ void setup() {
   modeset();
   steplcd();
   freqlcd(freq);
+
 }
 
 //----------  Main program  ------------------------------------
 
- 
+
+
 void loop() {
 #ifdef BLUEPILL
   digitalWrite(LED, !digitalRead(LED));
 #endif
 
+#define DEBUG
 #ifdef DEBUG
-  if (interruptCount != lastInterruptCount) {
-    Serial.print("Interrupts: "); Serial.println(interruptCount);
-    lastInterruptCount = interruptCount;
+
+  if ( interruptCount != lastInterruptCount ) {
+    if (millis() > interruptsTimeExpired) { 
+      Serial.print("Interrupts: "); Serial.println(interruptCount);
+      lastInterruptCount = interruptCount;
+      interruptsTimeExpired = millis() + 1000;  // update max of one a second
+      //delay(1000);
+    }
   }
 #endif
 
@@ -439,7 +447,7 @@ void band2eep(){
     eep_bfo[0]=11056570;                 // LSB BFO Frequency
     eep_bfo[1]=11059840;                 // USB BFO Frequency
     eep_bfo[2]=11058400;                 // CW  BFO Frequency
-//  eep_bfo[3]=11058200;                 // AM Not needed for testing only
+    eep_bfo[3]=11058200;                 // AM BFO Frequency
 
     int eep_rombadd=EEP_IFSHIFT;             // BFO ROMadd:0x090    
     for (int i=0;i<4;i++){
